@@ -316,8 +316,14 @@ class LocomotionEnv(DirectRLEnv):
         return observations
 
 
-    def _get_feet_edge_penalty(self, height_data_scanner: torch.Tensor, contacts_foot: torch.Tensor) -> torch.Tensor:
+    def _get_feet_edge_penalty(self, ) -> torch.Tensor:
         """Penalize feet in contact near local height discontinuities measured by the height scanner."""
+
+        height_data_scanner = self._height_scanner3.data.ray_hits_w[..., 2]
+        height_data_scanner = torch.nan_to_num(height_data_scanner, nan=0.0, posinf=1.0, neginf=-1.0)
+        height_data_scanner = torch.clip(height_data_scanner, min=-5, max=5) # Handle inf values
+
+        contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
 
         # Read the scanner grid geometry from the RayCaster config. The height scanner returns a flat vector,
         # so we need the resolution and number of samples along x/y to reshape it into a 2D local height map.
@@ -541,7 +547,7 @@ class LocomotionEnv(DirectRLEnv):
         feet_slide = torch.sum(body_vel.norm(dim=-1) * contacts_foot, dim=1)
 
         # feet edge
-        feet_edge = self._get_feet_edge_penalty(height_data_scanner, contacts_foot)
+        feet_edge = self._get_feet_edge_penalty()
 
 
         # feet periodical contacts suggestion
