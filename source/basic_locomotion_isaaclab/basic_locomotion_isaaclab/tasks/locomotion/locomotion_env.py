@@ -319,97 +319,103 @@ class LocomotionEnv(DirectRLEnv):
     def _get_feet_edge_penalty(self, ) -> torch.Tensor:
         """Penalize feet in contact near local height discontinuities measured by the height scanner."""
 
-        height_data_scanner = self._height_scanner3.data.ray_hits_w[..., 2]
-        height_data_scanner = torch.nan_to_num(height_data_scanner, nan=0.0, posinf=1.0, neginf=-1.0)
-        height_data_scanner = torch.clip(height_data_scanner, min=-5, max=5) # Handle inf values
+        if isinstance(self.cfg, AliengoRoughVisionEnvCfg) or isinstance(self.cfg, Go2RoughVisionEnvCfg) or isinstance(self.cfg, HyQRealRoughVisionEnvCfg) or isinstance(self.cfg, B2RoughVisionEnvCfg):
 
-        contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
+            height_data_scanner = self._height_scanner3.data.ray_hits_w[..., 2]
+            height_data_scanner = torch.nan_to_num(height_data_scanner, nan=0.0, posinf=1.0, neginf=-1.0)
+            height_data_scanner = torch.clip(height_data_scanner, min=-5, max=5) # Handle inf values
 
-        # Read the scanner grid geometry from the RayCaster config. The height scanner returns a flat vector,
-        # so we need the resolution and number of samples along x/y to reshape it into a 2D local height map.
-        height_map_resolution = self._height_scanner3.cfg.pattern_cfg.resolution
-        height_map_x_points = int(round(self._height_scanner3.cfg.pattern_cfg.size[0] / height_map_resolution)) + 1
-        height_map_y_points = int(round(self._height_scanner3.cfg.pattern_cfg.size[1] / height_map_resolution)) + 1
+            contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
 
-        # Convert the flat ray-hit heights from shape (num_envs, num_rays) to
-        # (num_envs, y_points, x_points), matching the default GridPattern ordering used in the cfg.
-        height_grid = height_data_scanner.reshape(self.num_envs, height_map_y_points, height_map_x_points)
+            # Read the scanner grid geometry from the RayCaster config. The height scanner returns a flat vector,
+            # so we need the resolution and number of samples along x/y to reshape it into a 2D local height map.
+            height_map_resolution = self._height_scanner3.cfg.pattern_cfg.resolution
+            height_map_x_points = int(round(self._height_scanner3.cfg.pattern_cfg.size[0] / height_map_resolution)) + 1
+            height_map_y_points = int(round(self._height_scanner3.cfg.pattern_cfg.size[1] / height_map_resolution)) + 1
 
-        # Allocate a boolean map with the same local-grid shape. A True cell means that cell is near a detected edge.
-        edge_map = torch.zeros_like(height_grid, dtype=torch.bool)
+            # Convert the flat ray-hit heights from shape (num_envs, num_rays) to
+            # (num_envs, y_points, x_points), matching the default GridPattern ordering used in the cfg.
+            height_grid = height_data_scanner.reshape(self.num_envs, height_map_y_points, height_map_x_points)
 
-        # Detect edges along the local x direction by comparing each cell with its right neighbor.
-        # If the height jump is larger than the configured threshold, mark both neighboring cells as edge cells.
-        x_edges = torch.abs(height_grid[:, :, 1:] - height_grid[:, :, :-1]) > self.cfg.feet_edge_height_threshold
-        edge_map[:, :, :-1] |= x_edges
-        edge_map[:, :, 1:] |= x_edges
+            # Allocate a boolean map with the same local-grid shape. A True cell means that cell is near a detected edge.
+            edge_map = torch.zeros_like(height_grid, dtype=torch.bool)
 
-        # Do the same along the local y direction by comparing each cell with the next row.
-        # This catches edges that run roughly left-right in the scanner frame.
-        y_edges = torch.abs(height_grid[:, 1:, :] - height_grid[:, :-1, :]) > self.cfg.feet_edge_height_threshold
-        edge_map[:, :-1, :] |= y_edges
-        edge_map[:, 1:, :] |= y_edges
+            # Detect edges along the local x direction by comparing each cell with its right neighbor.
+            # If the height jump is larger than the configured threshold, mark both neighboring cells as edge cells.
+            x_edges = torch.abs(height_grid[:, :, 1:] - height_grid[:, :, :-1]) > self.cfg.feet_edge_height_threshold
+            edge_map[:, :, :-1] |= x_edges
+            edge_map[:, :, 1:] |= x_edges
 
-        # Expand the edge cells by a small pixel radius, so feet close to an edge are penalized even if the
-        # nearest ray sample is not exactly on the discontinuity. max_pool2d acts like binary dilation here.
-        _feet_edge_radius_px = 2
-        kernel_size = 2 * _feet_edge_radius_px + 1
+            # Do the same along the local y direction by comparing each cell with the next row.
+            # This catches edges that run roughly left-right in the scanner frame.
+            y_edges = torch.abs(height_grid[:, 1:, :] - height_grid[:, :-1, :]) > self.cfg.feet_edge_height_threshold
+            edge_map[:, :-1, :] |= y_edges
+            edge_map[:, 1:, :] |= y_edges
 
-        edge_map = F.max_pool2d(
-            edge_map.unsqueeze(1).float(),
-            kernel_size=kernel_size,
-            stride=1,
-            padding=_feet_edge_radius_px,
-        ).squeeze(1).bool()
+            # Expand the edge cells by a small pixel radius, so feet close to an edge are penalized even if the
+            # nearest ray sample is not exactly on the discontinuity. max_pool2d acts like binary dilation here.
+            _feet_edge_radius_px = 2
+            kernel_size = 2 * _feet_edge_radius_px + 1
 
-        # Get foot positions in world frame, then subtract the scanner origin to express them relative to
-        # the scanner position. Shape stays (num_envs, num_feet, 3).
-        feet_pos_w = self._robot.data.body_pos_w[:, self._feet_ids_robot, :3]
-        feet_pos_scanner_w = feet_pos_w - self._height_scanner3.data.pos_w.unsqueeze(1)
+            edge_map = F.max_pool2d(
+                edge_map.unsqueeze(1).float(),
+                kernel_size=kernel_size,
+                stride=1,
+                padding=_feet_edge_radius_px,
+            ).squeeze(1).bool()
 
-        # The height scanner uses yaw-aligned rays, so rotate the relative foot vectors back by the scanner yaw.
-        # This gives foot coordinates in the same local x/y frame as the height_grid.
-        scanner_yaw_w = math_utils.yaw_quat(self._height_scanner3.data.quat_w).unsqueeze(1).expand(
-            -1, feet_pos_w.shape[1], -1
-        )
-        feet_pos_scanner = math_utils.quat_apply_inverse(scanner_yaw_w, feet_pos_scanner_w)
+            # Get foot positions in world frame, then subtract the scanner origin to express them relative to
+            # the scanner position. Shape stays (num_envs, num_feet, 3).
+            feet_pos_w = self._robot.data.body_pos_w[:, self._feet_ids_robot, :3]
+            feet_pos_scanner_w = feet_pos_w - self._height_scanner3.data.pos_w.unsqueeze(1)
 
-        # Split local foot coordinates into x/y components. These are continuous coordinates in meters,
-        # not grid indices yet.
-        feet_x = feet_pos_scanner[..., 0]
-        feet_y = feet_pos_scanner[..., 1]
+            # The height scanner uses yaw-aligned rays, so rotate the relative foot vectors back by the scanner yaw.
+            # This gives foot coordinates in the same local x/y frame as the height_grid.
+            scanner_yaw_w = math_utils.yaw_quat(self._height_scanner3.data.quat_w).unsqueeze(1).expand(
+                -1, feet_pos_w.shape[1], -1
+            )
+            feet_pos_scanner = math_utils.quat_apply_inverse(scanner_yaw_w, feet_pos_scanner_w)
 
-        # Compute the actual local min/max covered by the scanner rays. This is safer than assuming
-        # +/- size/2 because it uses the generated ray pattern directly.
-        scanner_ray_starts = self._height_scanner3.ray_starts[0]
-        height_grid_x_min = torch.min(scanner_ray_starts[:, 0])
-        height_grid_x_max = torch.max(scanner_ray_starts[:, 0])
-        height_grid_y_min = torch.min(scanner_ray_starts[:, 1])
-        height_grid_y_max = torch.max(scanner_ray_starts[:, 1])
+            # Split local foot coordinates into x/y components. These are continuous coordinates in meters,
+            # not grid indices yet.
+            feet_x = feet_pos_scanner[..., 0]
+            feet_y = feet_pos_scanner[..., 1]
 
-        # Keep track of which feet are inside the scanner footprint. Feet outside the scanned area are
-        # ignored for this penalty because we do not have local height data there.
-        feet_inside_scan = (
-            (feet_x >= height_grid_x_min)
-            & (feet_x <= height_grid_x_max)
-            & (feet_y >= height_grid_y_min)
-            & (feet_y <= height_grid_y_max)
-        )
+            # Compute the actual local min/max covered by the scanner rays. This is safer than assuming
+            # +/- size/2 because it uses the generated ray pattern directly.
+            scanner_ray_starts = self._height_scanner3.ray_starts[0]
+            height_grid_x_min = torch.min(scanner_ray_starts[:, 0])
+            height_grid_x_max = torch.max(scanner_ray_starts[:, 0])
+            height_grid_y_min = torch.min(scanner_ray_starts[:, 1])
+            height_grid_y_max = torch.max(scanner_ray_starts[:, 1])
 
-        # Quantize each foot's local x/y position to the nearest cell index in the scanner grid.
-        # Clamp afterwards so gather stays valid even for feet just outside the scan boundary.
-        feet_ix = torch.round((feet_x - height_grid_x_min) / height_map_resolution).long()
-        feet_iy = torch.round((feet_y - height_grid_y_min) / height_map_resolution).long()
-        feet_ix = torch.clamp(feet_ix, 0, height_map_x_points - 1)
-        feet_iy = torch.clamp(feet_iy, 0, height_map_y_points - 1)
+            # Keep track of which feet are inside the scanner footprint. Feet outside the scanned area are
+            # ignored for this penalty because we do not have local height data there.
+            feet_inside_scan = (
+                (feet_x >= height_grid_x_min)
+                & (feet_x <= height_grid_x_max)
+                & (feet_y >= height_grid_y_min)
+                & (feet_y <= height_grid_y_max)
+            )
 
-        # Convert 2D grid indices (iy, ix) to flat indices and gather whether each foot cell is marked as edge.
-        feet_grid_ids = feet_iy * height_map_x_points + feet_ix
-        feet_at_edge = torch.gather(edge_map.reshape(self.num_envs, -1), 1, feet_grid_ids)
+            # Quantize each foot's local x/y position to the nearest cell index in the scanner grid.
+            # Clamp afterwards so gather stays valid even for feet just outside the scan boundary.
+            feet_ix = torch.round((feet_x - height_grid_x_min) / height_map_resolution).long()
+            feet_iy = torch.round((feet_y - height_grid_y_min) / height_map_resolution).long()
+            feet_ix = torch.clamp(feet_ix, 0, height_map_x_points - 1)
+            feet_iy = torch.clamp(feet_iy, 0, height_map_y_points - 1)
 
-        # Penalize only feet that are in contact, inside the scanned area, and located on/near an edge.
-        # The returned value is the number of violating feet per environment.
-        result = contacts_foot & feet_inside_scan & feet_at_edge
+            # Convert 2D grid indices (iy, ix) to flat indices and gather whether each foot cell is marked as edge.
+            feet_grid_ids = feet_iy * height_map_x_points + feet_ix
+            feet_at_edge = torch.gather(edge_map.reshape(self.num_envs, -1), 1, feet_grid_ids)
+
+            # Penalize only feet that are in contact, inside the scanned area, and located on/near an edge.
+            # The returned value is the number of violating feet per environment.
+            result = contacts_foot & feet_inside_scan & feet_at_edge
+        
+        else:
+            result = torch.zeros(self.num_envs, self._feet_ids_robot.shape[0], dtype=torch.bool, device=self.device)
+
         return torch.sum(result.float(), dim=1)
 
 
