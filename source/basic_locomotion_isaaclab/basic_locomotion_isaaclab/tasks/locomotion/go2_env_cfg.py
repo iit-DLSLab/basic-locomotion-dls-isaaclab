@@ -308,9 +308,10 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     # This is used in loocmotion_env.py for the above reward
     desired_hip_offset = 0.095
 
-    feet_edge_reward_scale = -0.25
+    feet_edge_reward_scale = 0.0
     feet_edge_height_threshold = 0.05
     feet_edge_horizontal_radius = 0.10
+    visualize_edge_map = False
 
     feet_vertical_surface_contacts_reward_scale = -0.25
 
@@ -390,7 +391,8 @@ class Go2RoughVisionEnvCfg(Go2FlatEnvCfg):
         height_map_y_points = int(round(self.height_scanner2.pattern_cfg.size[1] / self.height_scanner2.pattern_cfg.resolution)) + 1
         self.observation_space = self.observation_space + height_map_x_points * height_map_y_points
 
-        self.feet_vertical_surface_contacts_reward_scale = -0.25*4.0
+        self.feet_vertical_surface_contacts_reward_scale = -2.5
+        self.feet_edge_reward_scale = -0.25
 
     use_vision = True
 
