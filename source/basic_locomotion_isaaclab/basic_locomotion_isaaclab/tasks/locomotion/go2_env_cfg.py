@@ -308,6 +308,10 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     # This is used in loocmotion_env.py for the above reward
     desired_hip_offset = 0.095
 
+    feet_edge_reward_scale = -0.25
+    feet_edge_height_threshold = 0.05
+    feet_edge_horizontal_radius = 0.10
+
     feet_vertical_surface_contacts_reward_scale = -0.25
 
 
@@ -396,6 +400,17 @@ class Go2RoughVisionEnvCfg(Go2FlatEnvCfg):
         offset=RayCasterCfg.OffsetCfg(pos=(0.4, 0.0, 0.0)),
         ray_alignment='yaw',
         pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[0.6, 0.8]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+
+    # we add a height scanner for feet edge reward
+    height_scanner3 = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+        ray_alignment='yaw',
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.8, 0.8]),
         debug_vis=False,
         mesh_prim_paths=["/World/ground"],
     )

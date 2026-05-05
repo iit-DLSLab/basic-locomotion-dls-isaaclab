@@ -353,6 +353,10 @@ class HyQRealFlatEnvCfg(DirectRLEnvCfg):
     # This is used in loocmotion_env.py for the above reward
     desired_hip_offset = 0.165
 
+    feet_edge_reward_scale = -0.25
+    feet_edge_height_threshold = 0.05
+    feet_edge_horizontal_radius = 0.10
+
     feet_vertical_surface_contacts_reward_scale = -0.25
 
 
