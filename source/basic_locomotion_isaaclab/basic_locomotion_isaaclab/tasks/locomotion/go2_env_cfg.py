@@ -311,6 +311,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     feet_edge_reward_scale = 0.0
     feet_edge_height_threshold = 0.05
     feet_edge_horizontal_radius = 0.10
+    feet_edge_radius = 0
     visualize_edge_map = False
 
     feet_vertical_surface_contacts_reward_scale = -0.25
@@ -392,7 +393,7 @@ class Go2RoughVisionEnvCfg(Go2FlatEnvCfg):
         self.observation_space = self.observation_space + height_map_x_points * height_map_y_points
 
         self.feet_vertical_surface_contacts_reward_scale = -2.5
-        self.feet_edge_reward_scale = -0.25
+        self.feet_edge_reward_scale = -1.0
 
     use_vision = True
 

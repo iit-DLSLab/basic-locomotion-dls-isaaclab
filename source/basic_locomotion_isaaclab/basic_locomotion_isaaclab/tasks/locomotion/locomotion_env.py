@@ -347,12 +347,11 @@ class LocomotionEnv(DirectRLEnv):
         edge_map[:, :-1, :] |= y_edges
         edge_map[:, 1:, :] |= y_edges
 
-        edge_radius_px = 1
         edge_map = F.max_pool2d(
             edge_map.unsqueeze(1).float(),
-            kernel_size=2 * edge_radius_px + 1,
+            kernel_size=2 * self.cfg.feet_edge_radius_px + 1,
             stride=1,
-            padding=edge_radius_px,
+            padding=self.cfg.edge_radius_px,
         ).squeeze(1).bool()
 
         return edge_map, height_map_resolution, height_map_x_points, height_map_y_points
@@ -361,65 +360,85 @@ class LocomotionEnv(DirectRLEnv):
     def _get_feet_edge_penalty(self, ) -> torch.Tensor:
         """Penalize feet in contact near local height discontinuities measured by the height scanner."""
 
-        if self._has_edge_map():
+        if not self._has_edge_map():
+            return torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
 
-            contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
+        contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
 
-            edge_map, height_map_resolution, height_map_x_points, height_map_y_points = self._compute_edge_map()
+        edge_map, height_map_resolution, height_map_x_points, height_map_y_points = self._compute_edge_map()
 
-            # Get foot positions in world frame, then subtract the scanner origin to express them relative to
-            # the scanner position. Shape stays (num_envs, num_feet, 3).
-            feet_pos_w = self._robot.data.body_pos_w[:, self._feet_ids_robot, :3]
-            feet_pos_scanner_w = feet_pos_w - self._height_scanner3.data.pos_w.unsqueeze(1)
+        # Get foot positions in world frame, then subtract the scanner origin to express them relative to
+        # the scanner position. Shape stays (num_envs, num_feet, 3).
+        feet_pos_w = self._robot.data.body_pos_w[:, self._feet_ids_robot, :3]
+        feet_pos_scanner_w = feet_pos_w - self._height_scanner3.data.pos_w.unsqueeze(1)
 
-            # The height scanner uses yaw-aligned rays, so rotate the relative foot vectors back by the scanner yaw.
-            # This gives foot coordinates in the same local x/y frame as the height_grid.
-            scanner_yaw_w = math_utils.yaw_quat(self._height_scanner3.data.quat_w).unsqueeze(1).expand(
-                -1, feet_pos_w.shape[1], -1
-            )
-            feet_pos_scanner = math_utils.quat_apply_inverse(scanner_yaw_w, feet_pos_scanner_w)
+        # The height scanner uses yaw-aligned rays, so rotate the relative foot vectors back by the scanner yaw.
+        # This gives foot coordinates in the same local x/y frame as the height_grid.
+        scanner_yaw_w = math_utils.yaw_quat(self._height_scanner3.data.quat_w).unsqueeze(1).expand(
+            -1, feet_pos_w.shape[1], -1
+        )
+        feet_pos_scanner = math_utils.quat_apply_inverse(scanner_yaw_w, feet_pos_scanner_w)
 
-            # Split local foot coordinates into x/y components. These are continuous coordinates in meters,
-            # not grid indices yet.
-            feet_x = feet_pos_scanner[..., 0]
-            feet_y = feet_pos_scanner[..., 1]
+        # Split local foot coordinates into x/y components. These are continuous coordinates in meters,
+        # not grid indices yet.
+        feet_x = feet_pos_scanner[..., 0]
+        feet_y = feet_pos_scanner[..., 1]
 
-            # Compute the actual local min/max covered by the scanner rays. This is safer than assuming
-            # +/- size/2 because it uses the generated ray pattern directly.
-            scanner_ray_starts = self._height_scanner3.ray_starts[0]
-            height_grid_x_min = torch.min(scanner_ray_starts[:, 0])
-            height_grid_x_max = torch.max(scanner_ray_starts[:, 0])
-            height_grid_y_min = torch.min(scanner_ray_starts[:, 1])
-            height_grid_y_max = torch.max(scanner_ray_starts[:, 1])
+        # Compute the actual local min/max covered by the scanner rays. This is safer than assuming
+        # +/- size/2 because it uses the generated ray pattern directly.
+        scanner_ray_starts = self._height_scanner3.ray_starts[0].to(device=self.device, dtype=feet_x.dtype)
+        height_grid_x_min = torch.min(scanner_ray_starts[:, 0])
+        height_grid_x_max = torch.max(scanner_ray_starts[:, 0])
+        height_grid_y_min = torch.min(scanner_ray_starts[:, 1])
+        height_grid_y_max = torch.max(scanner_ray_starts[:, 1])
 
-            # Keep track of which feet are inside the scanner footprint. Feet outside the scanned area are
-            # ignored for this penalty because we do not have local height data there.
-            feet_inside_scan = (
-                (feet_x >= height_grid_x_min)
-                & (feet_x <= height_grid_x_max)
-                & (feet_y >= height_grid_y_min)
-                & (feet_y <= height_grid_y_max)
-            )
+        # Keep track of which feet are inside the scanner footprint. Feet outside the scanned area are
+        # ignored for this penalty because we do not have local height data there.
+        feet_inside_scan = (
+            (feet_x >= height_grid_x_min)
+            & (feet_x <= height_grid_x_max)
+            & (feet_y >= height_grid_y_min)
+            & (feet_y <= height_grid_y_max)
+        )
 
-            # Quantize each foot's local x/y position to the nearest cell index in the scanner grid.
-            # Clamp afterwards so gather stays valid even for feet just outside the scan boundary.
-            feet_ix = torch.round((feet_x - height_grid_x_min) / height_map_resolution).long()
-            feet_iy = torch.round((feet_y - height_grid_y_min) / height_map_resolution).long()
-            feet_ix = torch.clamp(feet_ix, 0, height_map_x_points - 1)
-            feet_iy = torch.clamp(feet_iy, 0, height_map_y_points - 1)
+        # Quantize each foot's local x/y position to the nearest cell index in the scanner grid.
+        # Clamp afterwards so gather stays valid even for feet just outside the scan boundary.
+        feet_ix = torch.round((feet_x - height_grid_x_min) / height_map_resolution).long()
+        feet_iy = torch.round((feet_y - height_grid_y_min) / height_map_resolution).long()
+        feet_ix = torch.clamp(feet_ix, 0, height_map_x_points - 1)
+        feet_iy = torch.clamp(feet_iy, 0, height_map_y_points - 1)
 
-            # Convert 2D grid indices (iy, ix) to flat indices and gather whether each foot cell is marked as edge.
-            feet_grid_ids = feet_iy * height_map_x_points + feet_ix
-            feet_at_edge = torch.gather(edge_map.reshape(self.num_envs, -1), 1, feet_grid_ids)
+        edge_map_flat = edge_map.reshape(self.num_envs, -1)
 
-            # Penalize only feet that are in contact, inside the scanned area, and located on/near an edge.
-            # The returned value is the number of violating feet per environment.
-            result = contacts_foot & feet_inside_scan & feet_at_edge
-        
-        else:
-            result = torch.zeros(self.num_envs, self._feet_ids_robot.shape[0], dtype=torch.bool, device=self.device)
+        # Convert 2D grid indices (iy, ix) to flat indices and gather whether each foot cell is marked as edge.
+        feet_grid_ids = feet_iy * height_map_x_points + feet_ix
+        feet_at_edge = torch.gather(edge_map_flat, 1, feet_grid_ids)
 
-        return torch.sum(result.float(), dim=1)
+        # Penalize only feet that are in contact, inside the scanned area, and located on/near an edge.
+        violating_feet = contacts_foot & feet_inside_scan & feet_at_edge
+
+        #return torch.sum(violating_feet.float(), dim=1)
+
+        grid_xy = scanner_ray_starts[:, :2]
+        feet_xy = torch.stack((feet_x, feet_y), dim=-1)
+        distances_to_grid = torch.linalg.norm(feet_xy.unsqueeze(2) - grid_xy.unsqueeze(0).unsqueeze(0), dim=-1)
+        distances_to_grid = distances_to_grid.masked_fill(edge_map_flat.unsqueeze(1), torch.inf)
+        nearest_feasible_distance = torch.min(distances_to_grid, dim=-1).values
+
+        scan_diagonal = torch.sqrt(
+            torch.square(height_grid_x_max - height_grid_x_min) + torch.square(height_grid_y_max - height_grid_y_min)
+        )
+        nearest_feasible_distance = torch.where(
+            torch.isfinite(nearest_feasible_distance),
+            nearest_feasible_distance,
+            scan_diagonal,
+        )
+        return torch.sum(
+            torch.where(violating_feet, nearest_feasible_distance, torch.zeros_like(nearest_feasible_distance)),
+            dim=1,
+        )
+
+
 
 
     def _get_rewards(self) -> torch.Tensor:
