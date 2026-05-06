@@ -23,8 +23,8 @@ Features:
 - Sim-to-Real using ROS2 
 
 Features work in progress - done but not tested:
-- Dagger for depth-to-heightmap policy (distillation)
-- Depth-to-Heightmap NN for avoid the distillation above
+- Dagger for depth-to-heightmap policy distillation
+- Depth-to-Heightmap NN for avoiding the distillation step above
 
 
 Real-world deployment via:
