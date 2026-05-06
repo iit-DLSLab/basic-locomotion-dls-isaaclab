@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import gymnasium as gym
+import math
 import torch
+import torch.nn.functional as F
 
 import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
@@ -15,6 +17,7 @@ from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensor, ContactSensorCfg, RayCaster, RayCasterCfg, RayCasterCamera, RayCasterCameraCfg, MultiMeshRayCasterCamera, MultiMeshRayCasterCameraCfg, TiledCameraCfg, TiledCamera, patterns, Imu
 from isaaclab.sim import SimulationCfg
@@ -33,6 +36,7 @@ class LocomotionEnv(DirectRLEnv):
     cfg: AliengoFlatEnvCfg | AliengoRoughBlindEnvCfg | AliengoRoughVisionEnvCfg | Go2FlatEnvCfg | Go2RoughVisionEnvCfg | Go2RoughBlindEnvCfg | HyQRealFlatEnvCfg | HyQRealRoughVisionEnvCfg | HyQRealRoughBlindEnvCfg
 
     def __init__(self, cfg: AliengoFlatEnvCfg | AliengoRoughBlindEnvCfg | AliengoRoughVisionEnvCfg | Go2FlatEnvCfg | Go2RoughVisionEnvCfg | Go2RoughBlindEnvCfg | HyQRealFlatEnvCfg | HyQRealRoughVisionEnvCfg | HyQRealRoughBlindEnvCfg, render_mode: str | None = None, **kwargs):
+        self._edge_map_visualizer = None
         super().__init__(cfg, render_mode, **kwargs)
 
         # Joint position command (deviation from default joint positions)
@@ -116,6 +120,7 @@ class LocomotionEnv(DirectRLEnv):
                 "feet_contact_suggestion",
                 "feet_to_base_distance_l2",
                 "feet_to_hip_distance_l2",
+                "feet_edge",
                 "feet_vertical_surface_contacts",
             ]
         }
@@ -129,6 +134,9 @@ class LocomotionEnv(DirectRLEnv):
         
         self._feet_ids_robot, _ = self._robot .find_bodies(".*foot")
         self._hip_ids_robot, _ = self._robot.find_bodies(".*hip")
+
+        if getattr(self.cfg, "visualize_edge_map", False):
+            self.set_debug_vis(True)
 
 
     def _setup_scene(self):
@@ -147,10 +155,14 @@ class LocomotionEnv(DirectRLEnv):
             self._height_scanner2 = RayCaster(self.cfg.height_scanner2)
             self.scene.sensors["height_scanner2"] = self._height_scanner2
 
+            self._height_scanner3 = RayCaster(self.cfg.height_scanner3)
+            self.scene.sensors["height_scanner3"] = self._height_scanner3
 
-        #self._depth_camera = MultiMeshRayCasterCamera(self.cfg.depth_camera)
-        ##self._depth_camera = TiledCamera(self.cfg.depth_camera)
-        #self.scene.sensors["depth_camera"] = self._depth_camera
+        if(getattr(self.cfg, "use_depth_camera", False)):
+            self._depth_camera = MultiMeshRayCasterCamera(self.cfg.depth_camera)
+            ##self._depth_camera = TiledCamera(self.cfg.depth_camera)
+            self.scene.sensors["depth_camera"] = self._depth_camera
+            pass
 
         # we add an imu
         self._imu = Imu(self.cfg.imu)
@@ -301,13 +313,128 @@ class LocomotionEnv(DirectRLEnv):
             observations["amp"] = obs_amp
 
         # --------------------------------------------------------------------------------------------
-        #depth_data = self._depth_camera.data.output["distance_to_image_plane"]
-        #depth_data = torch.nan_to_num(depth_data, nan=0.0, posinf=1.0, neginf=-1.0)
-        #depth_data = depth_data.clip(-2.0, 2.0)
-        #observations["depth"] = depth_data
-
 
         return observations
+
+
+    def _has_edge_map(self) -> bool:
+        return hasattr(self, "_height_scanner3")
+
+
+    def _compute_edge_map(self) -> tuple[torch.Tensor, float, int, int]:
+        """Compute the scanner grid cells that are too close to a height discontinuity."""
+
+        height_data_scanner = self._height_scanner3.data.ray_hits_w[..., 2]
+        height_data_scanner = torch.nan_to_num(height_data_scanner, nan=0.0, posinf=1.0, neginf=-1.0)
+        height_data_scanner = torch.clip(height_data_scanner, min=-5, max=5)
+
+        height_map_resolution = self._height_scanner3.cfg.pattern_cfg.resolution
+        height_map_x_points = int(round(self._height_scanner3.cfg.pattern_cfg.size[0] / height_map_resolution)) + 1
+        height_map_y_points = int(round(self._height_scanner3.cfg.pattern_cfg.size[1] / height_map_resolution)) + 1
+        height_grid = height_data_scanner.reshape(self.num_envs, height_map_y_points, height_map_x_points)
+
+        edge_map = torch.zeros_like(height_grid, dtype=torch.bool)
+
+        x_edges = torch.abs(height_grid[:, :, 1:] - height_grid[:, :, :-1]) > self.cfg.feet_edge_height_threshold
+        edge_map[:, :, :-1] |= x_edges
+        edge_map[:, :, 1:] |= x_edges
+
+        y_edges = torch.abs(height_grid[:, 1:, :] - height_grid[:, :-1, :]) > self.cfg.feet_edge_height_threshold
+        edge_map[:, :-1, :] |= y_edges
+        edge_map[:, 1:, :] |= y_edges
+
+        edge_map = F.max_pool2d(
+            edge_map.unsqueeze(1).float(),
+            kernel_size=2 * self.cfg.feet_edge_radius_px + 1,
+            stride=1,
+            padding=self.cfg.feet_edge_radius_px,
+        ).squeeze(1).bool()
+
+        return edge_map, height_map_resolution, height_map_x_points, height_map_y_points
+
+
+    def _get_feet_edge_penalty(self, ) -> torch.Tensor:
+        """Penalize feet in contact near local height discontinuities measured by the height scanner."""
+
+        if not self._has_edge_map():
+            return torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+
+        contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
+
+        edge_map, height_map_resolution, height_map_x_points, height_map_y_points = self._compute_edge_map()
+
+        # Get foot positions in world frame, then subtract the scanner origin to express them relative to
+        # the scanner position. Shape stays (num_envs, num_feet, 3).
+        feet_pos_w = self._robot.data.body_pos_w[:, self._feet_ids_robot, :3]
+        feet_pos_scanner_w = feet_pos_w - self._height_scanner3.data.pos_w.unsqueeze(1)
+
+        # The height scanner uses yaw-aligned rays, so rotate the relative foot vectors back by the scanner yaw.
+        # This gives foot coordinates in the same local x/y frame as the height_grid.
+        scanner_yaw_w = math_utils.yaw_quat(self._height_scanner3.data.quat_w).unsqueeze(1).expand(
+            -1, feet_pos_w.shape[1], -1
+        )
+        feet_pos_scanner = math_utils.quat_apply_inverse(scanner_yaw_w, feet_pos_scanner_w)
+
+        # Split local foot coordinates into x/y components. These are continuous coordinates in meters,
+        # not grid indices yet.
+        feet_x = feet_pos_scanner[..., 0]
+        feet_y = feet_pos_scanner[..., 1]
+
+        # Compute the actual local min/max covered by the scanner rays. This is safer than assuming
+        # +/- size/2 because it uses the generated ray pattern directly.
+        scanner_ray_starts = self._height_scanner3.ray_starts[0].to(device=self.device, dtype=feet_x.dtype)
+        height_grid_x_min = torch.min(scanner_ray_starts[:, 0])
+        height_grid_x_max = torch.max(scanner_ray_starts[:, 0])
+        height_grid_y_min = torch.min(scanner_ray_starts[:, 1])
+        height_grid_y_max = torch.max(scanner_ray_starts[:, 1])
+
+        # Keep track of which feet are inside the scanner footprint. Feet outside the scanned area are
+        # ignored for this penalty because we do not have local height data there.
+        feet_inside_scan = (
+            (feet_x >= height_grid_x_min)
+            & (feet_x <= height_grid_x_max)
+            & (feet_y >= height_grid_y_min)
+            & (feet_y <= height_grid_y_max)
+        )
+
+        # Quantize each foot's local x/y position to the nearest cell index in the scanner grid.
+        # Clamp afterwards so gather stays valid even for feet just outside the scan boundary.
+        feet_ix = torch.round((feet_x - height_grid_x_min) / height_map_resolution).long()
+        feet_iy = torch.round((feet_y - height_grid_y_min) / height_map_resolution).long()
+        feet_ix = torch.clamp(feet_ix, 0, height_map_x_points - 1)
+        feet_iy = torch.clamp(feet_iy, 0, height_map_y_points - 1)
+
+        edge_map_flat = edge_map.reshape(self.num_envs, -1)
+
+        # Convert 2D grid indices (iy, ix) to flat indices and gather whether each foot cell is marked as edge.
+        feet_grid_ids = feet_iy * height_map_x_points + feet_ix
+        feet_at_edge = torch.gather(edge_map_flat, 1, feet_grid_ids)
+
+        # Penalize only feet that are in contact, inside the scanned area, and located on/near an edge.
+        violating_feet = contacts_foot & feet_inside_scan & feet_at_edge
+
+        #return torch.sum(violating_feet.float(), dim=1)
+
+        grid_xy = scanner_ray_starts[:, :2]
+        feet_xy = torch.stack((feet_x, feet_y), dim=-1)
+        distances_to_grid = torch.linalg.norm(feet_xy.unsqueeze(2) - grid_xy.unsqueeze(0).unsqueeze(0), dim=-1)
+        distances_to_grid = distances_to_grid.masked_fill(edge_map_flat.unsqueeze(1), torch.inf)
+        nearest_feasible_distance = torch.min(distances_to_grid, dim=-1).values
+
+        scan_diagonal = torch.sqrt(
+            torch.square(height_grid_x_max - height_grid_x_min) + torch.square(height_grid_y_max - height_grid_y_min)
+        )
+        nearest_feasible_distance = torch.where(
+            torch.isfinite(nearest_feasible_distance),
+            nearest_feasible_distance,
+            scan_diagonal,
+        )
+        return torch.sum(
+            torch.where(violating_feet, nearest_feasible_distance, torch.zeros_like(nearest_feasible_distance)),
+            dim=1,
+        )
+
+
 
 
     def _get_rewards(self) -> torch.Tensor:
@@ -443,6 +570,9 @@ class LocomotionEnv(DirectRLEnv):
         body_vel = self._robot.data.body_lin_vel_w[:, self._feet_ids_robot, :2]
         feet_slide = torch.sum(body_vel.norm(dim=-1) * contacts_foot, dim=1)
 
+        # feet edge
+        feet_edge = self._get_feet_edge_penalty()
+
 
         # feet periodical contacts suggestion
         should_move = torch.norm(self._commands[:, :3], dim=1) > 0.01
@@ -569,6 +699,7 @@ class LocomotionEnv(DirectRLEnv):
             "feet_contact_suggestion": feet_contact_suggestion * self.cfg.feet_contact_suggestion_reward_scale * self.step_dt,
             "feet_to_base_distance_l2": feet_to_base_distance * self.cfg.feet_to_base_distance_reward_scale * self.step_dt,
             "feet_to_hip_distance_l2": feet_to_hip_distance * self.cfg.feet_to_hip_distance_reward_scale * self.step_dt,
+            "feet_edge": feet_edge * self.cfg.feet_edge_reward_scale * self.step_dt,
             "feet_vertical_surface_contacts": feet_vertical_surface_contacts * self.cfg.feet_vertical_surface_contacts_reward_scale * self.step_dt,
         }
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
@@ -686,6 +817,61 @@ class LocomotionEnv(DirectRLEnv):
             extras["Episode_Curriculum/terrain_levels"] = torch.mean(self._terrain.terrain_levels.float())
         
         self.extras["log"].update(extras)
+
+
+    def _set_debug_vis_impl(self, debug_vis: bool):
+        if not getattr(self.cfg, "visualize_edge_map", False) or not self._has_edge_map():
+            if self._edge_map_visualizer is not None:
+                self._edge_map_visualizer.set_visibility(False)
+            return
+
+        if debug_vis:
+            if self._edge_map_visualizer is None:
+                marker_radius = getattr(self.cfg, "edge_map_visualization_dot_radius", 0.015)
+                edge_map_marker_cfg = VisualizationMarkersCfg(
+                    prim_path="/Visuals/EdgeMap",
+                    markers={
+                        "feasible": sim_utils.SphereCfg(
+                            radius=marker_radius,
+                            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 1.0, 1.0)),
+                        ),
+                        "not_feasible": sim_utils.SphereCfg(
+                            radius=marker_radius,
+                            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 0.0, 0.0)),
+                        ),
+                    },
+                )
+                self._edge_map_visualizer = VisualizationMarkers(edge_map_marker_cfg)
+            self._edge_map_visualizer.set_visibility(True)
+        elif self._edge_map_visualizer is not None:
+            self._edge_map_visualizer.set_visibility(False)
+
+
+    def _debug_vis_callback(self, event):
+        if self._edge_map_visualizer is None or not self._edge_map_visualizer.is_visible() or not self._has_edge_map():
+            return
+
+        env_ids_cfg = getattr(self.cfg, "edge_map_visualization_env_ids", [0])
+        if isinstance(env_ids_cfg, int):
+            env_ids_cfg = [env_ids_cfg]
+        env_ids = torch.tensor(env_ids_cfg, dtype=torch.long, device=self.device)
+        env_ids = env_ids[(env_ids >= 0) & (env_ids < self.num_envs)]
+        if env_ids.numel() == 0:
+            return
+
+        edge_map, _, _, _ = self._compute_edge_map()
+        translations = self._height_scanner3.data.ray_hits_w[env_ids].reshape(-1, 3).clone()
+        marker_indices = edge_map[env_ids].reshape(-1).long()
+
+        valid_hits = torch.isfinite(translations).all(dim=1)
+        if not torch.any(valid_hits):
+            return
+
+        translations = translations[valid_hits]
+        translations[:, 2] += getattr(self.cfg, "edge_map_visualization_height_offset", 0.02)
+        marker_indices = marker_indices[valid_hits]
+
+        self._edge_map_visualizer.visualize(translations=translations, marker_indices=marker_indices)
 
 
 

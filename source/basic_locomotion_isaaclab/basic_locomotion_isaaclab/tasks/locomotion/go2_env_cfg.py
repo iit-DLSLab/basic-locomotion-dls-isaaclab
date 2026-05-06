@@ -308,6 +308,12 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     # This is used in loocmotion_env.py for the above reward
     desired_hip_offset = 0.095
 
+    feet_edge_reward_scale = 0.0
+    feet_edge_height_threshold = 0.05
+    feet_edge_horizontal_radius = 0.10
+    feet_edge_radius_px = 0
+    visualize_edge_map = False
+
     feet_vertical_surface_contacts_reward_scale = -0.25
 
 
@@ -386,7 +392,8 @@ class Go2RoughVisionEnvCfg(Go2FlatEnvCfg):
         height_map_y_points = int(round(self.height_scanner2.pattern_cfg.size[1] / self.height_scanner2.pattern_cfg.resolution)) + 1
         self.observation_space = self.observation_space + height_map_x_points * height_map_y_points
 
-        self.feet_vertical_surface_contacts_reward_scale = -0.25*4.0
+        self.feet_vertical_surface_contacts_reward_scale = -2.5
+        self.feet_edge_reward_scale = -1.0
 
     use_vision = True
 
@@ -400,19 +407,30 @@ class Go2RoughVisionEnvCfg(Go2FlatEnvCfg):
         mesh_prim_paths=["/World/ground"],
     )
 
-    #camera_usd = CAMERA_USD_CFG
 
-    """depth_camera = MultiMeshRayCasterCameraCfg(
+    # we add a height scanner for feet edge reward
+    height_scanner3 = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+        ray_alignment='yaw',
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.8, 0.8]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+    #camera_usd = CAMERA_USD_CFG
+    use_depth_camera = False
+    depth_camera = MultiMeshRayCasterCameraCfg(
         prim_path="/World/envs/env_.*/Robot/base",
         update_period=1 / 60,
         offset=MultiMeshRayCasterCameraCfg.OffsetCfg(pos=(0.33, 0.0, 0.08), rot=(-0.405579, 0.579228, -0.579228, 0.405579)),
         mesh_prim_paths=[
             "/World/ground",
-            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/base/visuals"),
-            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FL_.*/visuals"),
-            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FR_.*/visuals"),
-            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RL_.*/visuals"),
-            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RR_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/base/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FL_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FR_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RL_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RR_.*/visuals"),
         ],
         pattern_cfg=patterns.PinholeCameraPatternCfg(
             focal_length=24.0,
@@ -421,7 +439,7 @@ class Go2RoughVisionEnvCfg(Go2FlatEnvCfg):
             width=240,
         ),
         debug_vis=True,
-    )"""
+    )
 
     """depth_camera = TiledCameraCfg(
         prim_path="/World/envs/env_.*/Camera",

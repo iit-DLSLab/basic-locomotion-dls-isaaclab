@@ -22,6 +22,11 @@ Features:
 - Sim-to-Sim in [Mujoco](https://github.com/google-deepmind/mujoco)
 - Sim-to-Real using ROS2 
 
+Features work in progress - done but not tested:
+- Dagger for depth-to-heightmap policy (distillation)
+- Depth-to-Heightmap NN for avoid the distillation above
+
+
 Real-world deployment via:
 - [muse](https://github.com/iit-DLSLab/muse/tree/unitree_sdk) for state estimation (if no concurrent state estimation is used)
 - [unitree-ros2-dls](https://github.com/iit-DLSLab/unitree-ros2-dls) for unitree robot communication
