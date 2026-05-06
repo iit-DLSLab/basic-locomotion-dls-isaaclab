@@ -11,8 +11,8 @@ from basic_locomotion_isaaclab.assets import ISAAC_ASSET_DIR
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 
 # B2 robot configuration from mujoco
-stiffness_mujoco = 25.0
-damping_mujoco = 2.0
+stiffness_mujoco = 100.0
+damping_mujoco = 5.0
 friction_static_mujoco = 0.2
 friction_dynamic_mujoco = 0.6
 armature_mujoco = 0.01
