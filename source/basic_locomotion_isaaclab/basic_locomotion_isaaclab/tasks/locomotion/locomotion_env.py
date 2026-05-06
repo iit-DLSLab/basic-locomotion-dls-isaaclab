@@ -158,10 +158,11 @@ class LocomotionEnv(DirectRLEnv):
             self._height_scanner3 = RayCaster(self.cfg.height_scanner3)
             self.scene.sensors["height_scanner3"] = self._height_scanner3
 
-
-        #self._depth_camera = MultiMeshRayCasterCamera(self.cfg.depth_camera)
-        ##self._depth_camera = TiledCamera(self.cfg.depth_camera)
-        #self.scene.sensors["depth_camera"] = self._depth_camera
+        if(getattr(self.cfg, "use_depth_camera", False)):
+            self._depth_camera = MultiMeshRayCasterCamera(self.cfg.depth_camera)
+            ##self._depth_camera = TiledCamera(self.cfg.depth_camera)
+            self.scene.sensors["depth_camera"] = self._depth_camera
+            pass
 
         # we add an imu
         self._imu = Imu(self.cfg.imu)
@@ -312,11 +313,6 @@ class LocomotionEnv(DirectRLEnv):
             observations["amp"] = obs_amp
 
         # --------------------------------------------------------------------------------------------
-        #depth_data = self._depth_camera.data.output["distance_to_image_plane"]
-        #depth_data = torch.nan_to_num(depth_data, nan=0.0, posinf=1.0, neginf=-1.0)
-        #depth_data = depth_data.clip(-2.0, 2.0)
-        #observations["depth"] = depth_data
-
 
         return observations
 

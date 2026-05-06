@@ -1,255 +1,180 @@
+from __future__ import annotations
+
 import torch
-from torch.utils.data import Dataset
-import random
-import os
-
-class CustomDataset(Dataset):
-    def __init__(self, max_size=None):
-        self.max_size = max_size
-        self.depths = []
-        self.states = []
-        self.actions = []
-    
-    def add_sample(self, depth_data, state_data, action_data):
-        depth_cpu = depth_data.clone().detach().cpu()
-        state_cpu = state_data.clone().detach().cpu()
-        action_cpu = action_data.clone().detach().cpu()
-        
-        self.depths.append(depth_cpu)
-        self.states.append(state_cpu)
-        self.actions.append(action_cpu)
-
-        # Check if the buffer exceeds the maximum size
-        if self.max_size is not None and len(self.depths) > self.max_size:
-            # Remove a random sample to maintain the buffer size
-            idx_to_remove = random.randint(0, len(self.depths) - 1)
-            del self.depths[idx_to_remove]
-            del self.states[idx_to_remove]
-            del self.actions[idx_to_remove]
-
-    def __len__(self):
-        return len(self.depths)
-
-    def __getitem__(self, idx):
-        return self.depths[idx], self.states[idx], self.actions[idx]
-
 import torch.nn as nn
-import torch.nn.functional as F
+from torch import Tensor
 
-class CNNEncoder(nn.Module):
-    """
-    Encodes an image (B, 1, H, W) -> (B, cnn_dim)
-    """
-    def __init__(self, cnn_dim: int = 256):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
-            nn.ReLU(),
+
+class DaggerReplayBuffer:
+    """Fixed-size CPU aggregation buffer for DAgger supervision."""
+
+    def __init__(self, capacity: int, depth_dtype: torch.dtype = torch.float16):
+        if capacity <= 0:
+            raise ValueError("DaggerReplayBuffer capacity must be positive.")
+
+        self.capacity = capacity
+        self.depth_dtype = depth_dtype
+        self.size = 0
+        self.next_idx = 0
+        self._depth_sequences: Tensor | None = None
+        self._common_obs: Tensor | None = None
+        self._expert_actions: Tensor | None = None
+
+    def __len__(self) -> int:
+        return self.size
+
+    def _lazy_init(self, depth_sequences: Tensor, common_obs: Tensor, expert_actions: Tensor) -> None:
+        self._depth_sequences = torch.empty(
+            (self.capacity, *depth_sequences.shape[1:]),
+            dtype=self.depth_dtype,
+            device="cpu",
         )
-        self.fc = nn.LazyLinear(cnn_dim)
-
-    def forward(self, x):
-        x = self.net(x)
-        x = x.flatten(1)
-        x = self.fc(x)
-        return x
-
-
-class MLPEncoder(nn.Module):
-    """
-    Encodes numeric features (B, mlp_in) -> (B, mlp_dim)
-    """
-    def __init__(self, mlp_in: int, mlp_dim: int = 128):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(mlp_in, 128),
-            nn.ReLU(),
-            nn.Linear(128, mlp_dim),
-            nn.ReLU(),
+        self._common_obs = torch.empty((self.capacity, common_obs.shape[-1]), dtype=torch.float32, device="cpu")
+        self._expert_actions = torch.empty(
+            (self.capacity, expert_actions.shape[-1]),
+            dtype=torch.float32,
+            device="cpu",
         )
 
-    def forward(self, x):
-        return self.net(x)
+    def add_batch(
+        self,
+        depth_sequences: Tensor,
+        common_obs: Tensor,
+        expert_actions: Tensor,
+        max_samples: int | None = None,
+    ) -> int:
+        """Add a batch of labeled states without saving anything to disk."""
+        if depth_sequences.shape[0] == 0:
+            return 0
+
+        batch_size = depth_sequences.shape[0]
+        sample_count = batch_size
+        if max_samples is not None and max_samples > 0:
+            sample_count = min(sample_count, max_samples)
+        sample_count = min(sample_count, self.capacity)
+
+        if sample_count < batch_size:
+            selected_indices = torch.randperm(batch_size, device=depth_sequences.device)[:sample_count]
+            depth_sequences = depth_sequences[selected_indices]
+            common_obs = common_obs[selected_indices]
+            expert_actions = expert_actions[selected_indices]
+
+        if self._depth_sequences is None or self._common_obs is None or self._expert_actions is None:
+            self._lazy_init(depth_sequences=depth_sequences, common_obs=common_obs, expert_actions=expert_actions)
+
+        write_indices = (torch.arange(sample_count) + self.next_idx) % self.capacity
+        self._depth_sequences[write_indices] = depth_sequences.detach().to("cpu", dtype=self.depth_dtype)
+        self._common_obs[write_indices] = common_obs.detach().to("cpu", dtype=torch.float32)
+        self._expert_actions[write_indices] = expert_actions.detach().to("cpu", dtype=torch.float32)
+
+        self.next_idx = (self.next_idx + sample_count) % self.capacity
+        self.size = min(self.capacity, self.size + sample_count)
+        return sample_count
+
+    def sample(self, batch_size: int, device: torch.device | str) -> tuple[Tensor, Tensor, Tensor]:
+        if self.size == 0:
+            raise RuntimeError("Cannot sample from an empty DAgger replay buffer.")
+        if self._depth_sequences is None or self._common_obs is None or self._expert_actions is None:
+            raise RuntimeError("DAgger replay buffer storage was not initialized.")
+
+        indices = torch.randint(0, self.size, (batch_size,))
+        depth_sequences = self._depth_sequences[indices].to(device=device, dtype=torch.float32, non_blocking=True)
+        common_obs = self._common_obs[indices].to(device=device, non_blocking=True)
+        expert_actions = self._expert_actions[indices].to(device=device, non_blocking=True)
+        return depth_sequences, common_obs, expert_actions
+
+
+class DepthCnnEncoder(nn.Module):
+    """Encodes each depth frame into a compact token for recurrent memory."""
+
+    def __init__(self, depth_channels: int = 1, feature_dim: int = 64):
+        super().__init__()
+        self.backbone = nn.Sequential(
+            nn.Conv2d(depth_channels, 16, kernel_size=5, stride=2, padding=2),
+            nn.ELU(inplace=True),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
+            nn.ELU(inplace=True),
+            nn.Conv2d(32, 48, kernel_size=3, stride=2, padding=1),
+            nn.ELU(inplace=True),
+            nn.Conv2d(48, 64, kernel_size=3, stride=2, padding=1),
+            nn.ELU(inplace=True),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+        )
+        self.projection = nn.Sequential(
+            nn.Linear(64, feature_dim),
+            nn.ELU(inplace=True),
+        )
+
+    def forward(self, depth_frames: Tensor) -> Tensor:
+        return self.projection(self.backbone(depth_frames))
 
 
 class DaggerNet(nn.Module):
-    """
-    Inputs:
-      img_seq:  (B, T, C, H, W)
-      vec_seq:  (B, T, F)
+    """Depth-map DAgger policy.
 
-    Output:
-      logits (or actions): (B, T, output_size) if return_sequences=True
-                           (B, output_size)   if return_sequences=False (last step)
+    The policy first embeds depth frames with a CNN, passes the depth token sequence
+    through a GRU, concatenates the latest depth memory with ``obs["common"]``, and
+    predicts the expert action.
     """
+
     def __init__(
         self,
         vec_size: int,
         output_size: int,
-        cnn_dim: int = 256,
-        mlp_dim: int = 128,
-        lstm_hidden: int = 256,
-        lstm_layers: int = 1,
+        depth_channels: int = 1,
+        cnn_dim: int = 64,
+        gru_hidden: int = 128,
+        gru_layers: int = 1,
+        head_hidden: int = 128,
         dropout: float = 0.0,
-        return_sequences: bool = True,
     ):
         super().__init__()
-        self.return_sequences = return_sequences
-
-        self.cnn = CNNEncoder(cnn_dim=cnn_dim)
-        self.mlp = MLPEncoder(mlp_in=vec_size, mlp_dim=mlp_dim)
-
-        self.dataset = CustomDataset(max_size=40000)
-
-        lstm_in = cnn_dim + mlp_dim
-        self.lstm = nn.LSTM(
-            input_size=lstm_in,
-            hidden_size=lstm_hidden,
-            num_layers=lstm_layers,
+        self.depth_encoder = DepthCnnEncoder(depth_channels=depth_channels, feature_dim=cnn_dim)
+        self.depth_gru = nn.GRU(
+            input_size=cnn_dim,
+            hidden_size=gru_hidden,
+            num_layers=gru_layers,
             batch_first=True,
-            dropout=dropout if lstm_layers > 1 else 0.0,
+            dropout=dropout if gru_layers > 1 else 0.0,
+        )
+        self.action_head = nn.Sequential(
+            nn.Linear(gru_hidden + vec_size, head_hidden),
+            nn.ELU(inplace=True),
+            nn.Linear(head_hidden, head_hidden),
+            nn.ELU(inplace=True),
+            nn.Linear(head_hidden, output_size),
         )
 
-        self.head = nn.Sequential(
-            nn.Linear(lstm_hidden, 128),
-            nn.ReLU(),
-            nn.Linear(128, output_size),
+    def _prepare_depth_sequence(self, depth_data: Tensor) -> Tensor:
+        if depth_data.dim() == 4:
+            return depth_data.unsqueeze(1)
+        if depth_data.dim() == 5:
+            return depth_data
+        raise ValueError(
+            "depth_data must have shape (B, C, H, W) or (B, T, C, H, W), "
+            f"but got {tuple(depth_data.shape)}"
         )
 
-    def forward(self, depth_seq, vec_seq, hidden=None):
-
-        # depth_seq: (B,1,H,W) oppure (B,T,1,H,W)
-        # vec_seq:   (B,F)     oppure (B,T,F)
-
-        if depth_seq.dim() == 4:              # (B,1,H,W) -> (B,1,1,H,W)
-            depth_seq = depth_seq.unsqueeze(1)
-        if vec_seq.dim() == 2:                # (B,F) -> (B,1,F)
-            vec_seq = vec_seq.unsqueeze(1)
-
-        B, T = depth_seq.shape[0], depth_seq.shape[1]
-
-        # CNN per timestep
-        depth_flat = depth_seq.reshape(B * T, *depth_seq.shape[2:])  # (B*T, 1, H, W)
-        depth_emb = self.cnn(depth_flat).reshape(B, T, -1)           # (B, T, cnn_dim)
-
-        # MLP per timestep
-        vec_flat = vec_seq.reshape(B * T, vec_seq.shape[-1])         # (B*T, F)
-        vec_emb = self.mlp(vec_flat).reshape(B, T, -1)               # (B, T, mlp_dim)
-
-        # Fuse -> LSTM
-        x = torch.cat([depth_emb, vec_emb], dim=-1)                  # (B, T, cnn_dim+mlp_dim)
-        lstm_out, new_hidden = self.lstm(x, hidden)                  # (B, T, lstm_hidden)
-
-        if self.return_sequences:
-            out = self.head(lstm_out)                                # (B, T, output_size)
-        else:
-            out = self.head(lstm_out[:, -1])                         # (B, output_size)
-
-        return out, new_hidden
-    
-    def train_network(self, batch_size=512, epochs=1000, learning_rate=1e-3, device='cpu', validation_split=0.2):
-        """Train the network with validation loss tracking.
-        
-        Args:
-            batch_size: Batch size for training
-            epochs: Number of training epochs
-            learning_rate: Learning rate for optimizer
-            device: Device to train on ('cpu' or 'cuda')
-            validation_split: Fraction of data to use for validation (0.0 to 1.0)
-        """
-        # Split dataset into training and validation
-        dataset_size = len(self.dataset)
-        if dataset_size == 0:
-            print("Warning: Dataset is empty. Cannot train.")
-            return
-        
-        val_size = int(dataset_size * validation_split)
-        train_size = dataset_size - val_size
-        train_dataset, val_dataset = torch.utils.data.random_split(self.dataset, [train_size,
-                                                                                    val_size])
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False
+    def _prepare_common_obs(self, common_obs: Tensor) -> Tensor:
+        if common_obs.dim() == 2:
+            return common_obs
+        if common_obs.dim() == 3:
+            return common_obs[:, -1]
+        raise ValueError(
+            "common_obs must have shape (B, F) or (B, T, F), "
+            f"but got {tuple(common_obs.shape)}"
         )
-        # Define optimizer and loss function
-        optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
-        loss_fn = torch.nn.MSELoss()
-        self.to(device)
 
-        for epoch in range(epochs):
-            self.train()
-            total_train_loss = 0.0
-            for batch in train_loader:
-                depths, states, actions = batch
-                depths = depths.to(device)
-                states = states.to(device)
-                actions = actions.to(device)
+    def forward(self, depth_data: Tensor, common_obs: Tensor, hidden: Tensor | None = None) -> tuple[Tensor, Tensor]:
+        depth_sequence = self._prepare_depth_sequence(depth_data)
+        common_features = self._prepare_common_obs(common_obs)
 
-                # depths: (B, X, T, A, C, H, W)
-                B, X, T, A, C, H, W = depths.shape
-                depths = depths.squeeze(1)                 # (B, T, A, C, H, W)
-                depths = depths.permute(0, 2, 1, 3, 4, 5)  # (B, A, T, C, H, W)
-                depths = depths.reshape(B*A, T, C, H, W)   # (B*A, T, C, H, W)
+        batch_size, sequence_length, channels, height, width = depth_sequence.shape
+        depth_tokens = self.depth_encoder(depth_sequence.reshape(batch_size * sequence_length, channels, height, width))
+        depth_tokens = depth_tokens.view(batch_size, sequence_length, -1)
 
-                # states: (B, X, T, A, F)
-                B2, X2, T2, A2, F = states.shape
-                states = states.squeeze(1)                 # (B, T, A, F)
-                states = states.permute(0, 2, 1, 3)        # (B, A, T, F)
-                states = states.reshape(B2*A2, T2, F)         # (B*A, T, F)
-
-                # actions: (B, X, T, A, O)
-                B3, X3, T3, A3, O = actions.shape
-                actions = actions.squeeze(1)               # (B, T, A, O)
-                actions = actions.permute(0, 2, 1, 3)      # (B, A, T, O)
-                actions = actions.reshape(B3*A3, T3, O)       # (B*A, T, O)
-                actions_last = actions[:, -1, :]   
-
-                optimizer.zero_grad()
-                outputs, _ = self.forward(depths, states, hidden=None)
-                loss = loss_fn(outputs, actions_last)
-                loss.backward()
-                optimizer.step()
-                total_train_loss += loss.item() * depths.size(0)
-
-            avg_train_loss = total_train_loss / train_size
-
-            # Validation phase
-            self.eval()
-            total_val_loss = 0.0
-            with torch.no_grad():
-                for batch in val_loader:
-                    depths, states, actions = batch
-                    depths = depths.to(device)
-                    states = states.to(device)
-                    actions = actions.to(device)
-
-                    # depths: (B, X, T, A, C, H, W)
-                    B, X, T, A, C, H, W = depths.shape
-                    depths = depths.squeeze(1)                 # (B, T, A, C, H, W)
-                    depths = depths.permute(0, 2, 1, 3, 4, 5)  # (B, A, T, C, H, W)
-                    depths = depths.reshape(B*A, T, C, H, W)   # (B*A, T, C, H, W)
-
-                    # states: (B, X, T, A, F)
-                    B2, X2, T2, A2, F = states.shape
-                    states = states.squeeze(1)                 # (B, T, A, F)
-                    states = states.permute(0, 2, 1, 3)        # (B, A, T, F)
-                    states = states.reshape(B2*A2, T2, F)         # (B*A, T, F)
-
-                    # actions: (B, X, T, A, O)
-                    B3, X3, T3, A3, O = actions.shape
-                    actions = actions.squeeze(1)               # (B, T, A, O)
-                    actions = actions.permute(0, 2, 1, 3)      # (B, A, T, O)
-                    actions = actions.reshape(B3*A3, T3, O)       # (B*A, T, O)
-                    actions_last = actions[:, -1, :]   
-
-                    outputs, _ = self.forward(depths, states, hidden=None)
-                    loss = loss_fn(outputs, actions_last)
-                    total_val_loss += loss.item() * depths.size(0)
-
-            avg_val_loss = total_val_loss / val_size
-
-            print(f"Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
-    
+        depth_memory, new_hidden = self.depth_gru(depth_tokens, hidden)
+        fused_features = torch.cat((depth_memory[:, -1], common_features), dim=-1)
+        actions = self.action_head(fused_features)
+        return actions, new_hidden
