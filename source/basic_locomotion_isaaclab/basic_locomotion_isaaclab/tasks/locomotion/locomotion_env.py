@@ -351,7 +351,7 @@ class LocomotionEnv(DirectRLEnv):
             edge_map.unsqueeze(1).float(),
             kernel_size=2 * self.cfg.feet_edge_radius_px + 1,
             stride=1,
-            padding=self.cfg.edge_radius_px,
+            padding=self.cfg.feet_edge_radius_px,
         ).squeeze(1).bool()
 
         return edge_map, height_map_resolution, height_map_x_points, height_map_y_points

@@ -311,7 +311,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     feet_edge_reward_scale = 0.0
     feet_edge_height_threshold = 0.05
     feet_edge_horizontal_radius = 0.10
-    feet_edge_radius = 0
+    feet_edge_radius_px = 0
     visualize_edge_map = False
 
     feet_vertical_surface_contacts_reward_scale = -0.25
