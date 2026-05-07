@@ -37,7 +37,7 @@ python scripts/rsl_rl/play.py --task=Locomotion-Aliengo-Rough-Blind --num_envs=1
 
 
 
-## Use AMP, Morphological Symmetried, DAGGER or Depth to Heightmap
+## Use AMP, Morphological Symmetries, DAGGER or Depth to Heightmap
 Each of these modules as a specific README in its own script folder.
 
 
