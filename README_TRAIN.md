@@ -71,7 +71,7 @@ Remember to set in the application above, "set as default prim" to the root of t
 
 ## Good to know
 
-If you have speed problem in training, may be due to cylinder collision. Then add
+If you have speed problem in training, may be due to cylinder collision. Then add, while calling train.py or play.py, this arg:
 
 ```bash
 --kit_args="--/physics/collisionApproximateCylinders=true"
