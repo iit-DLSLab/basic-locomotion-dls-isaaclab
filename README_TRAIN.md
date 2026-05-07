@@ -29,18 +29,6 @@ python scripts/rsl_rl/train.py --task=Locomotion-Aliengo-Flat --num_envs=4096 --
 python scripts/rsl_rl/train.py --task=Locomotion-Aliengo-Rough-Blind --num_envs=4096 --headless
 ```
 
-- To train with Symmetries, modify the related [rsl_rl_ppo_cfg.py](https://github.com/iit-DLSLab/basic-locomotion-dls-isaaclab/blob/devel/source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/tasks/locomotion/agents/rsl_rl_ppo_cfg.py) setting *class_name = PPOSymmDataAugmented*
-```bash
-python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Aliengo-Flat --num_envs=4096 --headless
-python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Aliengo-Rough-Blind --num_envs=4096 --headless
-```
-
-- To train with AMP, modify the related [rsl_rl_ppo_cfg.py](https://github.com/iit-DLSLab/basic-locomotion-dls-isaaclab/blob/devel/source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/tasks/locomotion/agents/rsl_rl_ppo_cfg.py) setting *class_name = AMP_PPO*
-```bash. **You need for this to install rsl-rl v3.1.2**
-python scripts/amp_rl/train_amp.py --task=Locomotion-Aliengo-Flat --num_envs=4096 --headless
-python scripts/amp_rl/train_amp.py --task=Locomotion-Aliengo-Rough-Blind --num_envs=4096 --headless
-```
-
 - To test the policy, you can press:
 ```bash
 python scripts/rsl_rl/play.py --task=Locomotion-Aliengo-Flat --num_envs=16
@@ -48,11 +36,10 @@ python scripts/rsl_rl/play.py --task=Locomotion-Aliengo-Rough-Blind --num_envs=1
 ```
 
 
-- If you have speed problem in training, may be due to cylinder collision. Then add
 
-```bash
---kit_args="--/physics/collisionApproximateCylinders=true"
-```
+## Use AMP, Morphological Symmetried, DAGGER or Depth to Heightmap
+Each of these modules as a specific README in its own script folder.
+
 
 ## Run Hyperparameter Search
 
@@ -79,4 +66,13 @@ Remember to set in the application above, "set as default prim" to the root of t
     <!-- FL_foot only collision -->
     <geom name="FL" class="collision" size="0.0265" pos="0 0 0" />
 </body>
+```
+
+
+## Good to know
+
+If you have speed problem in training, may be due to cylinder collision. Then add
+
+```bash
+--kit_args="--/physics/collisionApproximateCylinders=true"
 ```
