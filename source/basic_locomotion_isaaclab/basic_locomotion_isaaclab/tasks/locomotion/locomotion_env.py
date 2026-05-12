@@ -606,6 +606,9 @@ class LocomotionEnv(DirectRLEnv):
         self._swing_peak_periodic *= ~contact_periodic_on # reset if the foot is in contact periodic phase
         self._swing_peak_periodic = torch.max(self._swing_peak_periodic, self._robot.data.body_pos_w[:, self._feet_ids_robot, 2].clone())
         feet_z_target_error_mujoco_periodic = self.cfg.desired_feet_height + torch.cat((mean_height_ray_front.unsqueeze(1).expand(-1, 2), mean_height_ray_back.unsqueeze(1).expand(-1, 2)), dim=1) - self._swing_peak_periodic
+        # If the raw error is negative, halve it to not discourage too much
+        feet_z_target_error_mujoco_periodic = torch.where(feet_z_target_error_mujoco_periodic < 0.0, feet_z_target_error_mujoco_periodic * 0.2, feet_z_target_error_mujoco_periodic)
+        feet_z_target_error_mujoco_periodic = torch.abs(feet_z_target_error_mujoco_periodic)
         feet_z_target_error_mujoco_periodic = torch.clamp(feet_z_target_error_mujoco_periodic, min=.0, max=self.cfg.desired_feet_height)
 
         feet_height_clearance_mujoco_periodic_FL = torch.exp(-feet_z_target_error_mujoco_periodic[:,0]/ 0.01) * should_move * ~contact_periodic_on[:,0]
