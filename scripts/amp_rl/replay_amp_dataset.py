@@ -115,7 +115,7 @@ def main():
     env = RslRlVecEnvWrapper(env)
 
     dataset_path = (
-        "/home/alienware/isaaclab_ws_home/quadruped_rl_collection/dataset/traj_0.npy"
+        os.path.dirname(os.path.realpath(__file__)) + "amp_dataset/flat.npy"
     )
     data = np.load(str(dataset_path), allow_pickle=True).item()
     dataset_joint_names = data["joints_list"]

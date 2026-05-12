@@ -84,7 +84,7 @@ class FlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     )
 
     #AMP Related Stuff
-    amp_data_path = "./../../../amp_dataset/"
+    amp_data_path = "./../../../../../../scripts/amp_rl/amp_dataset/"
     dataset_names = ["flat"]
     dataset_weights = [1.0, 1.0]
     slow_down_factor = 1.0
@@ -163,7 +163,7 @@ class RoughPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     )
 
     #AMP Related Stuff
-    amp_data_path = "./../../../amp_dataset/"
+    amp_data_path = "./../../../../../../scripts/amp_rl/amp_dataset/"
     dataset_names = ["flat", "boxes", "stairs"]
     dataset_weights = [1.0, 1.0, 1.0, 1.0]
     slow_down_factor = 1.0
