@@ -60,7 +60,7 @@ B2_CALF_ACTUATOR_CFG = IdentifiedActuatorElectricCfg(
 
 B2_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ISAAC_ASSET_DIR}/b2_asset/from_xml/b2.usd",
+        usd_path=f"{ISAAC_ASSET_DIR}/b2_asset/b2.usd",
         #usd_path=f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/B2/B2.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
