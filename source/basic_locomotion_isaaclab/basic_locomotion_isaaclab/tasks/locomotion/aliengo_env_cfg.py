@@ -281,12 +281,8 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
 
     # Desired clip actions
     desired_clip_actions = 3.0
-
-    # Desired step freq and duty factor (if periodic gait is used)
-    desired_step_freq = 1.4
-    desired_duty_factor = 0.65
-    desired_phase_offset = [0.0, 0.5, 0.5, 0.0] #FL, FR, RL, RR
     
+
     # Tracking reward scale
     lin_vel_reward_scale = 2.0
     yaw_rate_reward_scale = 0.5
@@ -295,6 +291,7 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
     orientation_reward_scale = -5.0
     height_reward_scale = 1.0
     
+
     # Joint reward scale
     joints_torque_reward_scale = -2.5e-6 
     joints_accel_reward_scale = -2.5e-7
@@ -303,10 +300,12 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
     joints_thigh_position_reward_scale = -0.1 * 0.0
     joints_calf_position_reward_scale = -0.001 * 0.0
     
+
     # Undesired contacts reward scale
     undersired_contact_reward_scale = -1.0
     action_rate_reward_scale = -0.01
     action_smoothness_reward_scale = -0.001
+
 
     # Feet reward scale
     feet_air_time_reward_scale = 0.5 * 0.0
@@ -321,19 +320,26 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
     feet_to_base_distance_reward_scale = 0.25 * 0.0
     
     feet_to_hip_distance_reward_scale = 1.5
+    # This is used in loocmotion_env.py for the above reward
+    desired_hip_offset = 0.083
+
+    feet_edge_reward_scale = 0.0
+    feet_edge_height_threshold = 0.05
+    feet_edge_horizontal_radius = 0.10
+    feet_edge_radius_px = 0
+    visualize_edge_map = False
+
+    feet_vertical_surface_contacts_reward_scale = -0.25
+
 
     # Contact suggestion reward scale
     periodic_contact_suggestion_reward_scale =  0.25
-    stance_contact_suggestion_reward_scale = 0.25
-    
-    # This is used in loocmotion_env.py for the above reward
-    desired_hip_offset = 0.083
-    
-    feet_edge_reward_scale = -0.25
-    feet_edge_height_threshold = 0.05
-    feet_edge_horizontal_radius = 0.10
+    # Desired step freq and duty factor (if periodic gait contact suggestion is used)
+    desired_step_freq = 1.4
+    desired_duty_factor = 0.65
+    desired_phase_offset = [0.0, 0.5, 0.5, 0.0] #FL, FR, RL, RR
 
-    feet_vertical_surface_contacts_reward_scale = -0.25
+    stance_contact_suggestion_reward_scale = 0.25
 
 
 

@@ -276,12 +276,8 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
 
     # Desired clip actions
     desired_clip_actions = 3.0
+        
 
-    # Desired step freq and duty factor (if periodic gait is used)
-    desired_step_freq = 1.4
-    desired_duty_factor = 0.65
-    desired_phase_offset = [0.0, 0.5, 0.5, 0.0] #FL, FR, RL, RR
-    
     # Tracking reward scale
     lin_vel_reward_scale = 2.0
     yaw_rate_reward_scale = 0.5
@@ -290,6 +286,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     orientation_reward_scale = -5.0
     height_reward_scale = 1.0
     
+
     # Joint reward scale
     joints_torque_reward_scale = -2.5e-6 
     joints_accel_reward_scale = -2.5e-7
@@ -304,6 +301,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     action_rate_reward_scale = -0.01
     action_smoothness_reward_scale = -0.001
 
+
     # Feet reward scale
     feet_air_time_reward_scale = 0.5 * 0.0
 
@@ -317,11 +315,6 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     feet_to_base_distance_reward_scale = 0.25 * 0.0
     
     feet_to_hip_distance_reward_scale = 1.5
-
-    # Contact suggestion reward scale
-    periodic_contact_suggestion_reward_scale =  0.25
-    stance_contact_suggestion_reward_scale = 0.25
-
     # This is used in loocmotion_env.py for the above reward
     desired_hip_offset = 0.095
 
@@ -332,6 +325,17 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     visualize_edge_map = False
 
     feet_vertical_surface_contacts_reward_scale = -0.25
+
+
+    # Contact suggestion reward scale
+    periodic_contact_suggestion_reward_scale =  0.25
+    # Desired step freq and duty factor (if periodic gait contact suggestion is used)
+    desired_step_freq = 1.4
+    desired_duty_factor = 0.65
+    desired_phase_offset = [0.0, 0.5, 0.5, 0.0] #FL, FR, RL, RR
+
+    stance_contact_suggestion_reward_scale = 0.25
+
 
 
 import isaaclab.terrains as terrain_gen
