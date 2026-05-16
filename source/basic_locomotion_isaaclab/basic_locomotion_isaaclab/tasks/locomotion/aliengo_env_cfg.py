@@ -318,10 +318,14 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
     feet_height_clearance_mujoco_periodic_reward_scale = 0.25 * 0.0
     
     feet_slide_reward_scale = -0.25 * 0.0
-    feet_contact_suggestion_reward_scale =  0.25
     feet_to_base_distance_reward_scale = 0.25 * 0.0
     
     feet_to_hip_distance_reward_scale = 1.5
+
+    # Contact suggestion reward scale
+    periodic_contact_suggestion_reward_scale =  0.25
+    stance_contact_suggestion_reward_scale = 0.25
+    
     # This is used in loocmotion_env.py for the above reward
     desired_hip_offset = 0.083
     
