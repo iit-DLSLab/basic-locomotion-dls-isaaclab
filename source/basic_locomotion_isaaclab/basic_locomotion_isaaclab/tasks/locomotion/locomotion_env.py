@@ -288,16 +288,17 @@ class LocomotionEnv(DirectRLEnv):
             obs = torch.cat((obs, obs_rma), dim=-1)
 
 
-        # Final observations dictionary
-        observations["policy"] = obs    
-        
-
         # Critic OBS could be different if needed
         if(self.cfg.use_asymmetric_ppo):
             obs_critic = self._get_privileged_observation()
             observations["critic"] = torch.cat((obs, obs_critic), dim=-1)
         else:
             observations["critic"] = obs
+
+
+        # Actor OBS - here after the critic to avoid duplication with rma obs
+        # if asymmetric ppo is used
+        observations["policy"] = obs    
         # ------------------------------------------------------------------------------------------
 
         # AMP related observation if used
