@@ -1051,31 +1051,16 @@ class LocomotionEnv(DirectRLEnv):
     def _get_privileged_observation(self):
         asset_cfg = SceneEntityCfg("robot", joint_names=[".*"])
         asset: Articulation = self.scene[asset_cfg.name]
-        """hip_static_friction = asset.actuators["hip"].friction_static
-        thigh_static_friction = asset.actuators["thigh"].friction_static
-        calf_static_friction = asset.actuators["calf"].friction_static
-        
-        hip_dynamic_friction = asset.actuators["hip"].friction_dynamic
-        thigh_dynamic_friction = asset.actuators["thigh"].friction_dynamic
-        calf_dynamic_friction = asset.actuators["calf"].friction_dynamic
 
-        hip_armature = asset.actuators["hip"].armature
-        thigh_armature = asset.actuators["thigh"].armature
-        calf_armature = asset.actuators["calf"].armature
-
+        # PD of the joints
         hip_stiffness = asset.actuators["hip"].stiffness
         thigh_stiffness = asset.actuators["thigh"].stiffness
         calf_stiffness = asset.actuators["calf"].stiffness
 
         hip_damping = asset.actuators["hip"].damping
         thigh_damping = asset.actuators["thigh"].damping
-        calf_damping = asset.actuators["calf"].damping"""
-
-        #asset_cfg_base = SceneEntityCfg("robot", body_names="base")
-        #asset_base = self.scene[asset_cfg_base.name]
-        #masses = asset_base.root_physx_view.get_masses()
-        #inertias = asset_base.root_physx_view.get_inertias()
-
+        calf_damping = asset.actuators["calf"].damping
+        
         default_stiffness = asset.data.default_joint_stiffness[0][0]
         default_damping = asset.data.default_joint_damping[0][0]
 
@@ -1111,16 +1096,12 @@ class LocomotionEnv(DirectRLEnv):
         contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_contact_sensor_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
 
         obs_privileged = torch.cat(( 
-                            #hip_stiffness/default_stiffness, thigh_stiffness/default_stiffness, calf_stiffness/default_stiffness, #P gain
-                            #hip_damping/default_damping, thigh_damping/default_damping, calf_damping/default_damping, #D gain
+                            hip_stiffness/default_stiffness, thigh_stiffness/default_stiffness, calf_stiffness/default_stiffness, #P gain
+                            hip_damping/default_damping, thigh_damping/default_damping, calf_damping/default_damping, #D gain
                             self._robot.data.root_lin_vel_b,
                             height_error.unsqueeze(1),
                             terrain_pitch.unsqueeze(1),
                             contacts_foot,
-                            #masses, inertias,
-                            #hip_static_friction, thigh_static_friction, calf_static_friction,  
-                            #hip_dynamic_friction, thigh_dynamic_friction, calf_dynamic_friction, 
-                            #hip_armature, thigh_armature, calf_armature
                             ) 
                         , dim=-1)
         return obs_privileged
