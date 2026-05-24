@@ -121,7 +121,7 @@ class EventCfg:
 
 @configclass
 class AliengoFlatEnvCfg(DirectRLEnvCfg):
-    # env
+   # env
     episode_length_s = 20.0
     decimation = 4
     action_scale = 0.5
@@ -138,6 +138,7 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
     if(use_clock_signal):
         observation_space += 4 # clock signal for periodic gait
 
+    single_observation_space = observation_space # Usefull for concatenating history
 
     # observation history
     use_observation_history = True
@@ -150,11 +151,11 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
 
     observation_base_linear_scale = 1.0
     observation_base_ang_vel_scale = 1.0
-    observation_joint_vel_scale = 1.0
+    observation_joint_vel_scale = 0.1
 
 
     use_imu = False
-    
+
     
     use_concurrent_state_est = False
     if(use_concurrent_state_est):
@@ -181,7 +182,8 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
     if(use_rma):
         rma_output_space = 12 # P gain
         rma_output_space += 12 # D gain 
-        observation_space += rma_output_space
+        observation_space += rma_output_space*history_length
+        single_observation_space += rma_output_space
 
         single_rma_observation_space = 3 # base linear velocity
         single_rma_observation_space += 3 # base angular velocity  
@@ -428,12 +430,14 @@ class AliengoRoughBlindEnvCfg(AliengoFlatEnvCfg):
 
 
 @configclass
-class AliengoRoughVisionEnvCfg(AliengoFlatEnvCfg):
+class AliengoRoughVisionEnvCfg(AliengoRoughBlindEnvCfg):
 
     def __post_init__(self) -> None:
         height_map_x_points = int(round(self.height_scanner2.pattern_cfg.size[0] / self.height_scanner2.pattern_cfg.resolution)) + 1
         height_map_y_points = int(round(self.height_scanner2.pattern_cfg.size[1] / self.height_scanner2.pattern_cfg.resolution)) + 1
         self.observation_space = self.observation_space + height_map_x_points * height_map_y_points
+
+        self.feet_edge_reward_scale = -1.0
 
     use_vision = True
 
@@ -447,19 +451,29 @@ class AliengoRoughVisionEnvCfg(AliengoFlatEnvCfg):
         mesh_prim_paths=["/World/ground"],
     )
 
-    #camera_usd = CAMERA_USD_CFG
+    # we add a height scanner for feet edge reward
+    height_scanner3 = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+        ray_alignment='yaw',
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.8, 0.8]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
 
+    #camera_usd = CAMERA_USD_CFG
+    use_depth_camera = False
     depth_camera = MultiMeshRayCasterCameraCfg(
         prim_path="/World/envs/env_.*/Robot/base",
         update_period=1 / 60,
         offset=MultiMeshRayCasterCameraCfg.OffsetCfg(pos=(0.33, 0.0, 0.08), rot=(-0.405579, 0.579228, -0.579228, 0.405579)),
         mesh_prim_paths=[
             "/World/ground",
-            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/base/visuals"),
-            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FL_.*/visuals"),
-            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FR_.*/visuals"),
-            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RL_.*/visuals"),
-            MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RR_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/base/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FL_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FR_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RL_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RR_.*/visuals"),
         ],
         pattern_cfg=patterns.PinholeCameraPatternCfg(
             focal_length=24.0,
@@ -468,76 +482,4 @@ class AliengoRoughVisionEnvCfg(AliengoFlatEnvCfg):
             width=240,
         ),
         debug_vis=True,
-    )
-
-    """depth_camera = TiledCameraCfg(
-        prim_path="/World/envs/env_.*/Camera",
-        offset=TiledCameraCfg.OffsetCfg(pos=(-5.0, 0.0, 2.0), rot=(1.0, 0.0, 0.0, 0.0), convention="world"),
-        data_types=["depth"],
-        spawn=sim_utils.PinholeCameraCfg(
-            focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 20.0)
-        ),
-        width=120,
-        height=240,
-    )"""
-
-
-    ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
-        curriculum=False,
-        size=(8.0, 8.0),
-        border_width=20.0,
-        num_rows=10,
-        num_cols=20,
-        horizontal_scale=0.1,
-        vertical_scale=0.005,
-        slope_threshold=0.75,
-        use_cache=False,
-        sub_terrains={
-            "flat": terrain_gen.MeshPlaneTerrainCfg(
-                proportion=0.2
-            ),
-            "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-                proportion=0.1, grid_width=0.45, grid_height_range=(0.05, 0.15), platform_width=2.0,
-            ),
-            "star": terrain_gen.MeshStarTerrainCfg(
-                proportion=0.1, num_bars=10, bar_width_range=(0.15, 0.20), bar_height_range=(0.05, 0.15), platform_width=2.0,
-            ),
-            "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-                proportion=0.1, noise_range=(0.02, 0.06), noise_step=0.02, border_width=0.25
-            ),
-            "hf_pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
-                proportion=0.1, slope_range=(0.2, 0.4), platform_width=2.0, border_width=0.25
-            ),
-            "hf_pyramid_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
-                proportion=0.1, slope_range=(0.2, 0.4), platform_width=2.0, border_width=0.25
-            ),
-            "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-                proportion=0.15, step_height_range=(0.05, 0.25), step_width=0.3,
-                platform_width=3.0, border_width=1.0, holes=False,
-            ),
-            "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-                proportion=0.15, step_height_range=(0.05, 0.25), step_width=0.3,
-                platform_width=3.0, border_width=1.0, holes=False,
-            ),
-        },
-    )
-
-    """Rough terrains configuration."""
-    terrain = TerrainImporterCfg(
-        prim_path="/World/ground",
-        terrain_type="generator",
-        terrain_generator=ROUGH_TERRAINS_CFG,
-        max_init_terrain_level=10,
-        collision_group=-1,
-        physics_material=sim_utils.RigidBodyMaterialCfg(
-            friction_combine_mode="multiply",
-            restitution_combine_mode="multiply",
-            static_friction=1.0,
-            dynamic_friction=1.0,
-        ),
-        visual_material=sim_utils.MdlFileCfg(
-            mdl_path="{NVIDIA_NUCLEUS_DIR}/Materials/Base/Architecture/Shingles_01.mdl",
-            project_uvw=True,
-        ),
-        debug_vis=False,
     )

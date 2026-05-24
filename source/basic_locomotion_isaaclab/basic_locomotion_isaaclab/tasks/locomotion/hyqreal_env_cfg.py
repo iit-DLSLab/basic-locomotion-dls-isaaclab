@@ -151,7 +151,7 @@ class EventCfg:
 
 @configclass
 class HyQRealFlatEnvCfg(DirectRLEnvCfg):
-    # env
+   # env
     episode_length_s = 20.0
     decimation = 4
     action_scale = 0.5
@@ -168,6 +168,7 @@ class HyQRealFlatEnvCfg(DirectRLEnvCfg):
     if(use_clock_signal):
         observation_space += 4 # clock signal for periodic gait
 
+    single_observation_space = observation_space # Usefull for concatenating history
 
     # observation history
     use_observation_history = True
@@ -211,7 +212,8 @@ class HyQRealFlatEnvCfg(DirectRLEnvCfg):
     if(use_rma):
         rma_output_space = 12 # P gain
         rma_output_space += 12 # D gain 
-        observation_space += rma_output_space
+        observation_space += rma_output_space*history_length
+        single_observation_space += rma_output_space
 
         single_rma_observation_space = 3 # base linear velocity
         single_rma_observation_space += 3 # base angular velocity  
@@ -460,18 +462,56 @@ class HyQRealRoughBlindEnvCfg(HyQRealFlatEnvCfg):
 
 
 @configclass
-class HyQRealRoughVisionEnvCfg(HyQRealFlatEnvCfg):
-    # env
-    #observation_space = 276
-    observation_space = 429
+class HyQRealRoughVisionEnvCfg(HyQRealRoughBlindEnvCfg):
+
+    def __post_init__(self) -> None:
+        height_map_x_points = int(round(self.height_scanner2.pattern_cfg.size[0] / self.height_scanner2.pattern_cfg.resolution)) + 1
+        height_map_y_points = int(round(self.height_scanner2.pattern_cfg.size[1] / self.height_scanner2.pattern_cfg.resolution)) + 1
+        self.observation_space = self.observation_space + height_map_x_points * height_map_y_points
+
+        self.feet_edge_reward_scale = -1.0
+
+    use_vision = True
 
     # we add a height scanner for perceptive locomotion
-    height_scanner = RayCasterCfg(
+    height_scanner2 = RayCasterCfg(
         prim_path="/World/envs/env_.*/Robot/base",
-        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
-        #attach_yaw_only=True,
+        offset=RayCasterCfg.OffsetCfg(pos=(0.4, 0.0, 0.0)),
         ray_alignment='yaw',
-        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.2, 1.2]),
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[0.6, 0.8]),
         debug_vis=False,
         mesh_prim_paths=["/World/ground"],
+    )
+
+    # we add a height scanner for feet edge reward
+    height_scanner3 = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+        ray_alignment='yaw',
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.8, 0.8]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+    #camera_usd = CAMERA_USD_CFG
+    use_depth_camera = False
+    depth_camera = MultiMeshRayCasterCameraCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        update_period=1 / 60,
+        offset=MultiMeshRayCasterCameraCfg.OffsetCfg(pos=(0.33, 0.0, 0.08), rot=(-0.405579, 0.579228, -0.579228, 0.405579)),
+        mesh_prim_paths=[
+            "/World/ground",
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/base/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FL_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FR_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RL_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RR_.*/visuals"),
+        ],
+        pattern_cfg=patterns.PinholeCameraPatternCfg(
+            focal_length=24.0,
+            horizontal_aperture=20.955,
+            height=120,
+            width=240,
+        ),
+        debug_vis=True,
     )
