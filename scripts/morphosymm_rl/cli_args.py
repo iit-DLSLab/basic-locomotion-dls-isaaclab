@@ -29,7 +29,7 @@ def add_rsl_rl_args(parser: argparse.ArgumentParser):
         "--logger", type=str, default="wandb", choices={"wandb", "tensorboard", "neptune"}, help="Logger module to use."
     )
     arg_group.add_argument(
-        "--log_project_name", type=str, default=None, help="Name of the logging project when using wandb or neptune."
+        "--log_project_name", type=str, default="basic-locomotion", help="Name of the logging project when using wandb or neptune."
     )
 
 
