@@ -73,7 +73,7 @@ class LocomotionEnv(DirectRLEnv):
         if(cfg.use_rma == True):
             self._rma_network = SimpleNN(cfg.rma_observation_space, cfg.rma_output_space)
             self._rma_network.to(self.device)
-            self._observation_history_rma = torch.zeros(self.num_envs, cfg.history_length, cfg.single_rma_observation_space, device=self.device)
+            self._observation_history_rma = torch.zeros(self.num_envs, cfg.rma_history_length, cfg.single_rma_observation_space, device=self.device)
             if self.cfg.observation_noise_model:
                 self._observation_noise_model_rma: NoiseModel = self.cfg.observation_noise_model.class_type(
                     self.cfg.observation_noise_model, num_envs=self.num_envs, device=self.device
@@ -83,7 +83,7 @@ class LocomotionEnv(DirectRLEnv):
         if(cfg.use_concurrent_state_est == True):
             self._concurrent_state_est_network = SimpleNN(cfg.concurrent_state_est_observation_space, cfg.concurrent_state_est_output_space)
             self._concurrent_state_est_network.to(self.device)
-            self._observation_history_concurrent_state_est = torch.zeros(self.num_envs, cfg.history_length, cfg.single_concurrent_state_est_observation_space, device=self.device)
+            self._observation_history_concurrent_state_est = torch.zeros(self.num_envs, cfg.concurrent_state_est_history_length, cfg.single_concurrent_state_est_observation_space, device=self.device)
             if self.cfg.observation_noise_model:
                 self._observation_noise_model_concurrent_state_est: NoiseModel = self.cfg.observation_noise_model.class_type(
                     self.cfg.observation_noise_model, num_envs=self.num_envs, device=self.device
@@ -227,7 +227,7 @@ class LocomotionEnv(DirectRLEnv):
         # Choosing the main source of observation
         if(self.cfg.use_concurrent_state_est):
             # If concurrent SE/Learned State Estimator, we predict linear and angular vel from IMU
-            base_linear = self._get_concurrent_state_estimation(clock_data)
+            base_linear = self._get_concurrent_state_estimation()
             base_ang_vel = self._imu.data.ang_vel_b
             projected_gravity_b = self._imu.data.projected_gravity_b
         elif(self.cfg.use_imu):
@@ -284,7 +284,7 @@ class LocomotionEnv(DirectRLEnv):
         # If RMA, we add some other predicted obs
         if(self.cfg.use_rma):
             # Predict the RMA observation
-            obs_rma = self._get_rma(clock_data)
+            obs_rma = self._get_rma()
             obs = torch.cat((obs, obs_rma), dim=-1)
 
 
@@ -939,7 +939,7 @@ class LocomotionEnv(DirectRLEnv):
             self._commands[fixed_env_ids, :3] *= 0.0
 
 
-    def _get_concurrent_state_estimation(self, clock_data):
+    def _get_concurrent_state_estimation(self):
         # Using a supervised learning state estimation
         obs_concurrent_state_est = torch.cat(
             [
@@ -952,7 +952,6 @@ class LocomotionEnv(DirectRLEnv):
                     self._robot.data.joint_pos[:, self._ids_joints_order] - self._robot.data.default_joint_pos[:, self._ids_joints_order],
                     self._robot.data.joint_vel[:, self._ids_joints_order] * self.cfg.observation_joint_vel_scale,
                     self._actions,
-                    clock_data,
                 )
                 if tensor is not None
             ],
@@ -994,7 +993,7 @@ class LocomotionEnv(DirectRLEnv):
         return linear_velocity_b  
 
 
-    def _get_rma(self, clock_data):
+    def _get_rma(self):
         # Learning privileged information via supervised learning
         obs_rma = torch.cat(
             [
@@ -1007,7 +1006,6 @@ class LocomotionEnv(DirectRLEnv):
                     self._robot.data.joint_pos[:, self._ids_joints_order] - self._robot.data.default_joint_pos[:, self._ids_joints_order],
                     self._robot.data.joint_vel[:, self._ids_joints_order] * self.cfg.observation_joint_vel_scale,
                     self._actions,
-                    clock_data,
                 )
                 if tensor is not None
             ],

@@ -112,84 +112,99 @@ class EventCfg:
 
 @configclass
 class Go2FlatEnvCfg(DirectRLEnvCfg):
-    # Viewer
-    #viewer = ViewerCfg(eye=(1.5, 1.5, 0.3), origin_type="world", env_index=0, asset_name="robot")
-
     # env
     episode_length_s = 20.0
     decimation = 4
     action_scale = 0.5
     action_space = 12
-    observation_space = 48
-    state_space = 0
+    observation_space = 3 # base linear velocity
+    observation_space += 3 # base angular velocity  
+    observation_space += 3 # projected gravity in base frame
+    observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
+    observation_space += 12 # joint positions
+    observation_space += 12 # joint velocities
+    observation_space += 12 # last actions
 
     use_clock_signal = True
     if(use_clock_signal):
-        observation_space += 4
+        observation_space += 4 # clock signal for periodic gait
+
 
     # observation history
     use_observation_history = True
-    history_length = 5
     if(use_observation_history):
-        single_observation_space = observation_space # Placeholder. Later we may add map, but only from the latest obs
+        history_length = 5
         observation_space *= history_length
+    else:
+        history_length = 1
+
+
+    observation_base_linear_scale = 1.0
+    observation_base_ang_vel_scale = 1.0
+    observation_joint_vel_scale = 0.1
+
 
     use_imu = False
 
-    use_concurrent_state_est = True
+    
+    use_concurrent_state_est = False
     if(use_concurrent_state_est):
         concurrent_state_est_output_space = 3 #lin_vel_b
-        single_concurrent_state_est_observation_space = single_observation_space
-        concurrent_state_est_observation_space = observation_space
+        
+        single_concorrent_state_est_observation_space = 3 # base linear velocity
+        single_concorrent_state_est_observation_space += 3 # base angular velocity  
+        single_concorrent_state_est_observation_space += 3 # projected gravity in base frame
+        single_concorrent_state_est_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
+        single_concorrent_state_est_observation_space += 12 # joint positions
+        single_concorrent_state_est_observation_space += 12 # joint velocities
+        single_concorrent_state_est_observation_space += 12 # last actions
+        concorrent_state_est_history_length = 5 
+        concurrent_state_est_observation_space = single_concorrent_state_est_observation_space*concorrent_state_est_history_length
+        
         concurrent_state_est_batch_size = 512
         concurrent_state_est_train_epochs = 1000
         concurrent_state_est_lr = 1e-3
         concurrent_state_est_ep_saving_interval = 1000
         concurrent_state_est_ep_saving_start = 6000
 
+
     use_rma = False
     if(use_rma):
         rma_output_space = 12 # P gain
         rma_output_space += 12 # D gain 
-        #rma_output_space += 12 # friction static
-        #rma_output_space += 12 # friction dynamic
-        #rma_output_space += 12 # armature
-        single_rma_observation_space = single_observation_space
-        rma_observation_space = observation_space
         observation_space += rma_output_space
+
+        single_rma_observation_space = 3 # base linear velocity
+        single_rma_observation_space += 3 # base angular velocity  
+        single_rma_observation_space += 3 # projected gravity in base frame
+        single_rma_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
+        single_rma_observation_space += 12 # joint positions
+        single_rma_observation_space += 12 # joint velocities
+        single_rma_observation_space += 12 # last actions
+        rma_history_length = 5
+        rma_observation_space = single_rma_observation_space*rma_history_length
+    
         rma_batch_size = 512
         rma_train_epochs = 1000
         rma_lr = 1e-3
         rma_ep_saving_interval = 1000
         rma_ep_saving_start = 6000
-        
-    
-    use_filter_actions = True
 
-    
+
     # asymmetric ppo
     use_asymmetric_ppo = True
     if(use_asymmetric_ppo):
         state_space = observation_space
         #state_space += 12 # P gain
         #state_space += 12 # D gain
-        #state_space += 1*17 # mass*num_bodies
-        #state_space += 1*17 # inertia*num_bodies
-        #state_space += 1 # wrench
-        #state_space += 12 # friction static
-        #state_space += 12 # friction dynamic
-        #state_space += 12 # armature
-        #state_space += 1 # restitution
         state_space += 2 #base pitch and height
         state_space += 3 #clean lin vel b
         state_space += 4 #contacts foot
+    else:
+        state_space = 0
+
 
     use_amp = False
-
-    observation_base_linear_scale = 1.0
-    observation_base_ang_vel_scale = 1.0
-    observation_joint_vel_scale = 0.1
-
 
 
     # simulation
@@ -274,8 +289,10 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     desired_base_height = 0.30
     desired_feet_height = 0.05
 
+
     # Desired clip actions
     desired_clip_actions = 3.0
+    use_filter_actions = True
         
 
     # Tracking reward scale
