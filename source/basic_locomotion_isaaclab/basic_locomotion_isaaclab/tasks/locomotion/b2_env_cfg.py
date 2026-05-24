@@ -85,15 +85,15 @@ class EventCfg:
 
 
     actuator_gains = EventTerm(
-    func=mdp.randomize_actuator_gains,
-    mode="reset",
-    params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-        "stiffness_distribution_params": (-5.0, 5.0),
-        "damping_distribution_params": (-1.0, 1.0),
-        "operation": "add",
-        "distribution": "uniform",
-    },
+        func=mdp.randomize_actuator_gains,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "stiffness_distribution_params": (-5.0, 5.0),
+            "damping_distribution_params": (-1.0, 1.0),
+            "operation": "add",
+            "distribution": "uniform",
+        },
     )
     
     # interval
@@ -105,19 +105,6 @@ class EventCfg:
                                    "roll": (-0.5, 0.5), "pitch": (-0.5, 0.5), "yaw": (-0.5, 0.5)}},
     )
 
-    # zero command velocity
-    """zero_command_velocity = EventTerm(
-        func=custom_events.zero_command_velocity,
-        mode="interval",
-        interval_range_s=(19.0, 19.0),
-    )"""
-
-    """# reset command velocity
-    resample_command_velocity = EventTerm(
-        func=custom_events.resample_command_velocity,
-        mode="interval",
-        interval_range_s=(11.0, 11.0),
-    )"""
 
 
 
