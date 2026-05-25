@@ -29,11 +29,11 @@ class MorphologycalSymmetriesCfg:
 # Actor OBS
 history_length = 5
 obs_space_names_actor = [
-        "base_lin_vel:base",
-        "base_ang_vel:base",
-        "gravity:base",
+        "base_lin_vel",
+        "base_ang_vel",
+        "gravity",
         "ctrl_commands",
-        "default_qpos_js_error",
+        "qpos_js",
         "qvel_js",
         "actions",
         "clock_data",
@@ -42,16 +42,16 @@ obs_space_names_actor = [
 
 # Critic OBS
 obs_space_names_critic = [
-        "base_lin_vel:base",
-        "base_ang_vel:base",
-        "gravity:base",
+        "base_lin_vel",
+        "base_ang_vel",
+        "gravity",
         "ctrl_commands",
-        "default_qpos_js_error",
+        "qpos_js",
         "qvel_js",
         "actions",
         "clock_data",
     ]*int(history_length)
-obs_space_names_critic += ["base_pos_z", "base_pos_z", "clock_data", "default_qpos_js_error", "default_qpos_js_error"]
+obs_space_names_critic += ["position_gains", "velocity_gains", "base_pos_z", "base_pos_z", "clock_data"]
 
 
 # Action Space
