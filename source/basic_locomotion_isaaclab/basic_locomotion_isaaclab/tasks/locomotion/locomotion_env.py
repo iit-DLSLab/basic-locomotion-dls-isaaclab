@@ -80,12 +80,12 @@ class LocomotionEnv(DirectRLEnv):
                 )
 
         # Learned State Estimator
-        if(cfg.use_concorrent_state_est == True):
-            self._concorrent_state_est_network = SimpleNN(cfg.concorrent_state_est_observation_space, cfg.concorrent_state_est_output_space)
-            self._concorrent_state_est_network.to(self.device)
-            self._observation_history_concorrent_state_est = torch.zeros(self.num_envs, cfg.concorrent_state_est_history_length, cfg.single_concorrent_state_est_observation_space, device=self.device)
+        if(cfg.use_concurrent_state_est == True):
+            self._concurrent_state_est_network = SimpleNN(cfg.concurrent_state_est_observation_space, cfg.concurrent_state_est_output_space)
+            self._concurrent_state_est_network.to(self.device)
+            self._observation_history_concurrent_state_est = torch.zeros(self.num_envs, cfg.concurrent_state_est_history_length, cfg.single_concurrent_state_est_observation_space, device=self.device)
             if self.cfg.observation_noise_model:
-                self._observation_noise_model_concorrent_state_est: NoiseModel = self.cfg.observation_noise_model.class_type(
+                self._observation_noise_model_concurrent_state_est: NoiseModel = self.cfg.observation_noise_model.class_type(
                     self.cfg.observation_noise_model, num_envs=self.num_envs, device=self.device
                 )
 
@@ -225,9 +225,9 @@ class LocomotionEnv(DirectRLEnv):
             
 
         # Choosing the main source of observation
-        if(self.cfg.use_concorrent_state_est):
-            # If concorrent SE/Learned State Estimator, we predict linear and angular vel from IMU
-            base_linear = self._get_concorrent_state_estimation()
+        if(self.cfg.use_concurrent_state_est):
+            # If concurrent SE/Learned State Estimator, we predict linear and angular vel from IMU
+            base_linear = self._get_concurrent_state_estimation()
             base_ang_vel = self._imu.data.ang_vel_b
             projected_gravity_b = self._imu.data.projected_gravity_b
         elif(self.cfg.use_imu):
@@ -814,9 +814,9 @@ class LocomotionEnv(DirectRLEnv):
         self._phase_signal[env_ids] = self._phase_signal[env_ids]  % 1.0
 
         # Reset noise
-        if(self.cfg.use_concorrent_state_est):
+        if(self.cfg.use_concurrent_state_est):
             if self.cfg.observation_noise_model:
-                self._observation_noise_model_concorrent_state_est.reset(env_ids)
+                self._observation_noise_model_concurrent_state_est.reset(env_ids)
         
         if(self.cfg.use_rma):
             if self.cfg.observation_noise_model:
@@ -939,9 +939,9 @@ class LocomotionEnv(DirectRLEnv):
             self._commands[fixed_env_ids, :3] *= 0.0
 
 
-    def _get_concorrent_state_estimation(self):
+    def _get_concurrent_state_estimation(self):
         # Using a supervised learning state estimation
-        obs_concorrent_state_est = torch.cat(
+        obs_concurrent_state_est = torch.cat(
             [
                 tensor
                 for tensor in (
@@ -958,37 +958,37 @@ class LocomotionEnv(DirectRLEnv):
             dim=-1,
         )
         #the bottom element is the newest observation!!
-        self._observation_history_concorrent_state_est = torch.cat((self._observation_history_concorrent_state_est[:,1:,:], obs_concorrent_state_est.unsqueeze(1)), dim=1)
-        obs_concorrent_state_est = torch.flatten(self._observation_history_concorrent_state_est, start_dim=1)     
+        self._observation_history_concurrent_state_est = torch.cat((self._observation_history_concurrent_state_est[:,1:,:], obs_concurrent_state_est.unsqueeze(1)), dim=1)
+        obs_concurrent_state_est = torch.flatten(self._observation_history_concurrent_state_est, start_dim=1)     
 
         # Add noise to the observation - this is usually done in direct_rl.py in IsaacLab, but 
-        # the obs of concorrent SE does not pass from there - its prediciton yes instead!
+        # the obs of concurrent SE does not pass from there - its prediciton yes instead!
         if self.cfg.observation_noise_model:          
-            obs_concorrent_state_est = self._observation_noise_model_concorrent_state_est(obs_concorrent_state_est)   
+            obs_concurrent_state_est = self._observation_noise_model_concurrent_state_est(obs_concurrent_state_est)   
 
         # Saving data
-        output_concorrent_state_est = self._robot.data.root_lin_vel_b
-        self._concorrent_state_est_network.dataset.add_sample(obs_concorrent_state_est, output_concorrent_state_est)
+        output_concurrent_state_est = self._robot.data.root_lin_vel_b
+        self._concurrent_state_est_network.dataset.add_sample(obs_concurrent_state_est, output_concurrent_state_est)
 
         # Prediction
         num_episode_from_start = self.common_step_counter / 24. #self.max_episode_length #HACK this should be taken from rsl rl
         num_final_episode_from_start = 8000.
-        if num_episode_from_start > self.cfg.concorrent_state_est_ep_saving_start:
+        if num_episode_from_start > self.cfg.concurrent_state_est_ep_saving_start:
             with torch.no_grad(): 
-                prediction_concorrent_state_est = self._concorrent_state_est_network(obs_concorrent_state_est)
-            linear_velocity_b = prediction_concorrent_state_est[:, :3]
+                prediction_concurrent_state_est = self._concurrent_state_est_network(obs_concurrent_state_est)
+            linear_velocity_b = prediction_concurrent_state_est[:, :3]
         else:
             linear_velocity_b = self._robot.data.root_lin_vel_b
 
         # Train at some interval
-        if (num_episode_from_start % self.cfg.concorrent_state_est_ep_saving_interval == 0 and 
-            num_episode_from_start > self.cfg.concorrent_state_est_ep_saving_start - 1 and 
+        if (num_episode_from_start % self.cfg.concurrent_state_est_ep_saving_interval == 0 and 
+            num_episode_from_start > self.cfg.concurrent_state_est_ep_saving_start - 1 and 
                 num_episode_from_start < num_final_episode_from_start - 500):  # Adjust the interval as needed
-            self._concorrent_state_est_network.train_network(batch_size=self.cfg.concorrent_state_est_batch_size, 
-                                                            epochs=self.cfg.concorrent_state_est_train_epochs, 
-                                                            learning_rate=self.cfg.concorrent_state_est_lr, device=self.device)
+            self._concurrent_state_est_network.train_network(batch_size=self.cfg.concurrent_state_est_batch_size, 
+                                                            epochs=self.cfg.concurrent_state_est_train_epochs, 
+                                                            learning_rate=self.cfg.concurrent_state_est_lr, device=self.device)
             # Save the network
-            self._concorrent_state_est_network.save_network("concorrent_state_estimator.pth", self.device)    
+            self._concurrent_state_est_network.save_network("concurrent_state_estimator.pth", self.device)    
 
         return linear_velocity_b  
 
@@ -1016,7 +1016,7 @@ class LocomotionEnv(DirectRLEnv):
         obs = torch.flatten(self._observation_history_rma, start_dim=1)
 
         # Add noise to the observation - this is usually done in direct_rl.py in IsaacLab, but 
-        # the obs of concorrent SE does not pass from there - its prediciton yes instead!
+        # the obs of concurrent SE does not pass from there - its prediciton yes instead!
         if self.cfg.observation_noise_model:          
             obs = self._observation_noise_model_rma(obs.clone())  
         

@@ -73,7 +73,7 @@ class LocomotionPolicyWrapper:
         self.history_length = config.training_env["history_length"]
         if(self.use_observation_history):
             self.observation_space = self.observation_space * self.history_length
-        single_observation_space = int(self.observation_space/self.history_length)
+        single_observation_space = int(config.training_env["single_observation_space"])
         self._observation_history = np.zeros((self.history_length, single_observation_space), dtype=np.float32)
 
         try:
@@ -89,7 +89,8 @@ class LocomotionPolicyWrapper:
         # Learned State Estimator
         if(config.training_env["use_concurrent_state_est"] == True):
             self._concurrent_state_est_network = load_network(config.concurrent_state_est_network, device='cpu')
-            self._observation_history_concurrent_state_est = np.zeros((self.history_length, single_observation_space), dtype=np.float32)
+            single_concurrent_state_est_observation_space = int(config.training_env["single_concurrent_state_est_observation_space"])
+            self._observation_history_concurrent_state_est = np.zeros((self.history_length, single_concurrent_state_est_observation_space), dtype=np.float32)
 
 
         # Desired joint vector

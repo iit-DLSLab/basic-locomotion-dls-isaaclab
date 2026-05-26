@@ -65,6 +65,8 @@ discriminator:
   - 1024
   - 512
   reward_scale: 1.0
+  loss_type: BCEWithLogits
+  empirical_normalization: false
 history_length: 5
 obs_space_names_actor:
 - base_lin_vel:base

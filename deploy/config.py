@@ -15,7 +15,7 @@ if(robot == "aliengo"):
     Kp_stand_up_and_down = 25.
     Kd_stand_up_and_down = 2.
 
-    policy_folder_path = dir_path + "/../tested_policies/" + robot + "/symmetricactor_data_augmented"
+    policy_folder_path = dir_path + "/../tested_policies/" + robot + "/symm"
 
 elif(robot == "go2"):
     Kp_walking = 20.0
@@ -24,7 +24,7 @@ elif(robot == "go2"):
     Kp_stand_up_and_down = 25.
     Kd_stand_up_and_down = 2.
 
-    policy_folder_path = dir_path + "/../tested_policies/" + robot + "/concurrent_se_24k"
+    policy_folder_path = dir_path + "/../tested_policies/" + robot + "/concurrent_se"
 
 elif(robot == "b2"):
     Kp_walking = 100.

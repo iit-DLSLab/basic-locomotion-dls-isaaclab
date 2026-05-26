@@ -161,15 +161,15 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
     if(use_concurrent_state_est):
         concurrent_state_est_output_space = 3 #lin_vel_b
         
-        single_concorrent_state_est_observation_space = 3 # base linear velocity
-        single_concorrent_state_est_observation_space += 3 # base angular velocity  
-        single_concorrent_state_est_observation_space += 3 # projected gravity in base frame
-        single_concorrent_state_est_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
-        single_concorrent_state_est_observation_space += 12 # joint positions
-        single_concorrent_state_est_observation_space += 12 # joint velocities
-        single_concorrent_state_est_observation_space += 12 # last actions
-        concorrent_state_est_history_length = 5 
-        concurrent_state_est_observation_space = single_concorrent_state_est_observation_space*concorrent_state_est_history_length
+        single_concurrent_state_est_observation_space = 3 # base linear velocity
+        single_concurrent_state_est_observation_space += 3 # base angular velocity  
+        single_concurrent_state_est_observation_space += 3 # projected gravity in base frame
+        single_concurrent_state_est_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
+        single_concurrent_state_est_observation_space += 12 # joint positions
+        single_concurrent_state_est_observation_space += 12 # joint velocities
+        single_concurrent_state_est_observation_space += 12 # last actions
+        concurrent_state_est_history_length = 5 
+        concurrent_state_est_observation_space = single_concurrent_state_est_observation_space*concurrent_state_est_history_length
         
         concurrent_state_est_batch_size = 512
         concurrent_state_est_train_epochs = 1000
