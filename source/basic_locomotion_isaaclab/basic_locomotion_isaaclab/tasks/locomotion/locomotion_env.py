@@ -832,12 +832,18 @@ class LocomotionEnv(DirectRLEnv):
         self._phase_signal[env_ids] = self._phase_offset[env_ids].clone()# + self.step_dt * self._step_freq * torch.rand(env_ids.shape[0], 1, device=self.device)*10.
         self._phase_signal[env_ids] = self._phase_signal[env_ids]  % 1.0
 
-        # Reset noise
+        # Reset observation history
+        self._observation_history[env_ids] *= 0.0
+
+        # Reset obs and noise concurrent
         if(self.cfg.use_concurrent_state_est):
+            self._observation_history_concurrent_state_est[env_ids] *= 0.0
             if self.cfg.observation_noise_model:
                 self._observation_noise_model_concurrent_state_est.reset(env_ids)
         
+        # Reset obs and noise rma
         if(self.cfg.use_rma):
+            self._observation_history_rma[env_ids] *= 0.0
             if self.cfg.observation_noise_model:
                 self._observation_noise_model_rma.reset(env_ids)
 
