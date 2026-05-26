@@ -197,11 +197,21 @@ class HyQRealFlatEnvCfg(DirectRLEnvCfg):
     use_rma = False
     if(use_rma):
         rma_network_type = "mlp" # "mlp" or "tcn"
+        rma_use_latent_space = False
+        if(rma_use_latent_space):
+            rma_latent_space = 8
+            rma_latent_encoder_hidden_features = 128
+            rma_latent_encoder_seed = 0
         
-        rma_output_space = 12 # P gain
-        rma_output_space += 12 # D gain 
-        observation_space += rma_output_space*history_length
-        single_observation_space += rma_output_space
+        rma_privileged_observation_space = 12 # P gain
+        rma_privileged_observation_space += 12 # D gain
+        rma_privileged_observation_space += 3 # clean linear velocity
+        rma_privileged_observation_space += 1 # base height error
+        rma_privileged_observation_space += 1 # terrain pitch
+        rma_privileged_observation_space += 4 # foot contacts
+
+        rma_output_space = rma_latent_space if rma_use_latent_space else rma_privileged_observation_space
+        observation_space += rma_output_space
 
         single_rma_observation_space = 3 # base linear velocity
         single_rma_observation_space += 3 # base angular velocity  

@@ -1,5 +1,6 @@
 import torch
 from torch.utils.data import Dataset
+import math
 import random
 import os
 import tempfile
@@ -304,6 +305,40 @@ class TemporalConvNN(SupervisedNetworkBase):
         }
 
 
+class FrozenRandomMlpEncoder(torch.nn.Module):
+    def __init__(self, in_features, latent_features, hidden_features=128, seed=0):
+        super().__init__()
+        self.input_features = in_features
+        self.latent_features = latent_features
+        self.hidden_features = hidden_features
+        self.seed = seed
+        self.encoder = torch.nn.Sequential(
+            torch.nn.Linear(in_features, hidden_features),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_features, latent_features),
+            torch.nn.Tanh(),
+        )
+        self._reset_parameters(seed)
+        for parameter in self.parameters():
+            parameter.requires_grad_(False)
+        self.eval()
+
+    def _reset_parameters(self, seed):
+        generator = torch.Generator(device="cpu")
+        generator.manual_seed(seed)
+        for module in self.encoder:
+            if isinstance(module, torch.nn.Linear):
+                bound = 1.0 / math.sqrt(module.in_features)
+                module.weight.data.uniform_(-bound, bound, generator=generator)
+                module.bias.data.uniform_(-bound, bound, generator=generator)
+
+    def encode(self, x):
+        return self.encoder(x)
+
+    def forward(self, x):
+        return self.encode(x)
+
+
 def create_supervised_network(in_features, out_features, network_type="mlp", **kwargs):
     """Create a supervised network.
 
@@ -313,6 +348,7 @@ def create_supervised_network(in_features, out_features, network_type="mlp", **k
         network_type: "mlp" for MlpNN or "tcn" for TemporalConvNN.
         **kwargs: Extra architecture args. TCN requires sequence_length.
     """
+    kwargs = dict(kwargs)
     normalized_type = (network_type or "mlp").lower()
     if normalized_type in ("mlp", "simple", "simple_nn"):
         return MlpNN(in_features, out_features)
@@ -352,10 +388,13 @@ if __name__ == "__main__":
     features_per_step = 48
     input_features = sequence_length * features_per_step
     output_features = 3
+    privileged_features = 33
+    latent_features = 8
     batch_size = 16
 
     test_inputs = torch.randn(batch_size, input_features)
     test_targets = torch.randn(batch_size, output_features).clamp(-2.0, 2.0)
+    privileged_targets = torch.randn(batch_size, privileged_features).clamp(-2.0, 2.0)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         for network_type in ("mlp", "tcn"):
@@ -385,3 +424,26 @@ if __name__ == "__main__":
             )
 
             print(f"{network_type} smoke test passed.")
+
+        random_encoder = FrozenRandomMlpEncoder(privileged_features, latent_features, hidden_features=32, seed=123)
+        latent_targets = random_encoder.encode(privileged_targets)
+        assert latent_targets.shape == (batch_size, latent_features), (
+            f"Latent target shape mismatch: {latent_targets.shape}"
+        )
+        assert all(not parameter.requires_grad for parameter in random_encoder.parameters())
+
+        latent_predictor = create_supervised_network(
+            input_features,
+            latent_features,
+            network_type="tcn",
+            sequence_length=sequence_length,
+        )
+        for _ in range(5):
+            latent_predictor.dataset.add_sample(test_inputs, latent_targets)
+        latent_predictor.train_network(batch_size=2, epochs=2, learning_rate=1e-3, validation_split=0.2)
+        latent_predictions = latent_predictor(test_inputs)
+        assert latent_predictions.shape == (batch_size, latent_features), (
+            f"Latent predictor shape mismatch: {latent_predictions.shape}"
+        )
+
+        print("random-latent RMA smoke test passed.")
