@@ -44,9 +44,14 @@ python3 deploy/play_mujoco.py
 
 
 ## Sim-to-Sim with ROS2
+cd deploy/ros2_ws (TERMINAL 1)
+colcon build (TERMINAL 1)
+source install/setup.bash (TERMINAL 1)
+
 source deploy/ros2_localhost_connect.sh (TERMINAL 1)
 python3 deploy/run_controller_ros2.py (TERMINAL 1) 
 
+source install/setup.bash (TERMINAL 2)
 source deploy/ros2_localhost_connect.sh (TERMINAL 2)
 python3 deploy/run_simulator_ros2.py (TERMINAL 2)
 
@@ -61,7 +66,11 @@ Choose in deploy/config.py the robot/policy you want to run. This script matches
 
 ```bash
 ## Sim-to-Real with ROS2
-python3 deploy/run_controller_ros2.py (TERMINAL 1)
+cd deploy/ros2_ws (TERMINAL 1)
+colcon build (TERMINAL 1)
+source install/setup.bash (TERMINAL 1)
+
+python3 run_controller_ros2.py (TERMINAL 1)
 
 ros2 launch teleop_twist_joy teleop-launch.py joy_config:='xbox' (if want joystick) (TERMINAL 2)
 ```
