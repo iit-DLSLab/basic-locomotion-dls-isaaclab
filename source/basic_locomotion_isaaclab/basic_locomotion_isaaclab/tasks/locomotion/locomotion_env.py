@@ -30,7 +30,7 @@ from .go2_env_cfg import Go2FlatEnvCfg, Go2RoughVisionEnvCfg, Go2RoughBlindEnvCf
 from .hyqreal_env_cfg import HyQRealFlatEnvCfg, HyQRealRoughVisionEnvCfg, HyQRealRoughBlindEnvCfg
 from .b2_env_cfg import B2FlatEnvCfg, B2RoughVisionEnvCfg, B2RoughBlindEnvCfg
 
-from basic_locomotion_isaaclab.tasks.supervised_learning_networks import SimpleNN
+from basic_locomotion_isaaclab.tasks.supervised_learning_networks import create_supervised_network
 
 class LocomotionEnv(DirectRLEnv):
     cfg: AliengoFlatEnvCfg | AliengoRoughBlindEnvCfg | AliengoRoughVisionEnvCfg | Go2FlatEnvCfg | Go2RoughVisionEnvCfg | Go2RoughBlindEnvCfg | HyQRealFlatEnvCfg | HyQRealRoughVisionEnvCfg | HyQRealRoughBlindEnvCfg
@@ -71,7 +71,12 @@ class LocomotionEnv(DirectRLEnv):
 
         # RMA
         if(cfg.use_rma == True):
-            self._rma_network = SimpleNN(cfg.rma_observation_space, cfg.rma_output_space)
+            self._rma_network = create_supervised_network(
+                cfg.rma_observation_space,
+                cfg.rma_output_space,
+                network_type=getattr(cfg, "rma_network_type", "mlp"),
+                sequence_length=cfg.rma_history_length,
+            )
             self._rma_network.to(self.device)
             self._observation_history_rma = torch.zeros(self.num_envs, cfg.rma_history_length, cfg.single_rma_observation_space, device=self.device)
             if self.cfg.observation_noise_model:
@@ -81,7 +86,12 @@ class LocomotionEnv(DirectRLEnv):
 
         # Learned State Estimator
         if(cfg.use_concurrent_state_est == True):
-            self._concurrent_state_est_network = SimpleNN(cfg.concurrent_state_est_observation_space, cfg.concurrent_state_est_output_space)
+            self._concurrent_state_est_network = create_supervised_network(
+                cfg.concurrent_state_est_observation_space,
+                cfg.concurrent_state_est_output_space,
+                network_type=getattr(cfg, "concurrent_state_est_network_type", "mlp"),
+                sequence_length=cfg.concurrent_state_est_history_length,
+            )
             self._concurrent_state_est_network.to(self.device)
             self._observation_history_concurrent_state_est = torch.zeros(self.num_envs, cfg.concurrent_state_est_history_length, cfg.single_concurrent_state_est_observation_space, device=self.device)
             if self.cfg.observation_noise_model:

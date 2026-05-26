@@ -145,9 +145,10 @@ class B2FlatEnvCfg(DirectRLEnvCfg):
 
     use_imu = False
 
-    
-    use_concurrent_state_est = False
+    use_concurrent_state_est = True
     if(use_concurrent_state_est):
+        concurrent_state_est_network_type = "mlp" # "mlp" or "tcn"
+        
         concurrent_state_est_output_space = 3 #lin_vel_b
         
         single_concurrent_state_est_observation_space = 3 # base linear velocity
@@ -169,6 +170,8 @@ class B2FlatEnvCfg(DirectRLEnvCfg):
 
     use_rma = False
     if(use_rma):
+        rma_network_type = "mlp" # "mlp" or "tcn"
+        
         rma_output_space = 12 # P gain
         rma_output_space += 12 # D gain 
         observation_space += rma_output_space*history_length
