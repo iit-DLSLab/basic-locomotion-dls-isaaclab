@@ -24,7 +24,7 @@ elif(robot == "go2"):
     Kp_stand_up_and_down = 25.
     Kd_stand_up_and_down = 2.
 
-    policy_folder_path = dir_path + "/../tested_policies/" + robot + "/concurrent_se"
+    policy_folder_path = dir_path + "/../tested_policies/" + robot + "/symm"
 
 elif(robot == "b2"):
     Kp_walking = 100.

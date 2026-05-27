@@ -68,7 +68,7 @@ class RoughPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
-        class_name="PPO", #PPO, PPOSymmDataAugmented #AMP_PPO
+        class_name="PPOSymmDataAugmented", #PPO, PPOSymmDataAugmented #AMP_PPO
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
@@ -76,7 +76,7 @@ class RoughPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         num_learning_epochs=5,
         num_mini_batches=4,
         learning_rate=1.0e-3,
-        schedule="adaptive",
+        schedule="fixed",
         gamma=0.99,
         lam=0.95,
         desired_kl=0.01,
