@@ -6,7 +6,7 @@ from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
+from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, MultiMeshRayCasterCameraCfg, TiledCameraCfg, patterns
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.sensors import ImuCfg
@@ -111,15 +111,15 @@ class EventCfg:
 
 
     actuator_gains = EventTerm(
-    func=mdp.randomize_actuator_gains,
-    mode="reset",
-    params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-        "stiffness_distribution_params": (-20.0, 20.0),
-        "damping_distribution_params": (-5.0, 5.0),
-        "operation": "add",
-        "distribution": "uniform",
-    },
+        func=mdp.randomize_actuator_gains,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "stiffness_distribution_params": (-20.0, 20.0),
+            "damping_distribution_params": (-5.0, 5.0),
+            "operation": "add",
+            "distribution": "uniform",
+        },
     )
     
     # interval
@@ -131,104 +131,119 @@ class EventCfg:
                                    "roll": (-0.5, 0.5), "pitch": (-0.5, 0.5), "yaw": (-0.5, 0.5)}},
     )
 
-    # zero command velocity
-    """zero_command_velocity = EventTerm(
-        func=custom_events.zero_command_velocity,
-        mode="interval",
-        interval_range_s=(19.0, 19.0),
-    )"""
-
-    """# reset command velocity
-    resample_command_velocity = EventTerm(
-        func=custom_events.resample_command_velocity,
-        mode="interval",
-        interval_range_s=(11.0, 11.0),
-    )"""
-
-
 
 
 
 @configclass
 class HyQRealFlatEnvCfg(DirectRLEnvCfg):
-
-    # Viewer
-    #viewer = ViewerCfg(eye=(1.5, 1.5, 0.3), origin_type="world", env_index=0, asset_name="robot")
-
-    # env
+   # env
     episode_length_s = 20.0
     decimation = 4
     action_scale = 0.5
     action_space = 12
-    observation_space = 48
-    state_space = 0
+    observation_space = 3 # base linear velocity
+    observation_space += 3 # base angular velocity  
+    observation_space += 3 # projected gravity in base frame
+    observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
+    observation_space += 12 # joint positions
+    observation_space += 12 # joint velocities
+    observation_space += 12 # last actions
 
     use_clock_signal = True
     if(use_clock_signal):
-        observation_space += 4
+        observation_space += 4 # clock signal for periodic gait
+
+    single_observation_space = observation_space # Usefull for concatenating history
 
     # observation history
     use_observation_history = True
-    history_length = 5
     if(use_observation_history):
-        single_observation_space = observation_space # Placeholder. Later we may add map, but only from the latest obs
+        history_length = 5
         observation_space *= history_length
+    else:
+        history_length = 1
+
+
+    observation_base_linear_scale = 1.0
+    observation_base_ang_vel_scale = 1.0
+    observation_joint_vel_scale = 0.1
+
 
     use_imu = False
 
-    use_concurrent_state_est = False
+    use_concurrent_state_est = True
     if(use_concurrent_state_est):
+        concurrent_state_est_network_type = "mlp" # "mlp" or "tcn"
+        
         concurrent_state_est_output_space = 3 #lin_vel_b
-        single_concurrent_state_est_observation_space = single_observation_space
-        concurrent_state_est_observation_space = observation_space
-        concurrent_state_est_batch_size = 32
-        concurrent_state_est_train_epochs = 500
+        
+        single_concurrent_state_est_observation_space = 3 # base linear velocity
+        single_concurrent_state_est_observation_space += 3 # base angular velocity  
+        single_concurrent_state_est_observation_space += 3 # projected gravity in base frame
+        single_concurrent_state_est_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
+        single_concurrent_state_est_observation_space += 12 # joint positions
+        single_concurrent_state_est_observation_space += 12 # joint velocities
+        single_concurrent_state_est_observation_space += 12 # last actions
+        concurrent_state_est_history_length = 5 
+        concurrent_state_est_observation_space = single_concurrent_state_est_observation_space*concurrent_state_est_history_length
+        
+        concurrent_state_est_batch_size = 512
+        concurrent_state_est_train_epochs = 1000
         concurrent_state_est_lr = 1e-3
         concurrent_state_est_ep_saving_interval = 1000
         concurrent_state_est_ep_saving_start = 6000
 
+
     use_rma = False
     if(use_rma):
-        rma_output_space = 12 # P gain
-        rma_output_space += 12 # D gain 
-        rma_output_space += 12 # friction static
-        rma_output_space += 12 # friction dynamic
-        rma_output_space += 12 # armature
-        single_rma_observation_space = single_observation_space
-        rma_observation_space = observation_space
+        rma_network_type = "mlp" # "mlp" or "tcn"
+        rma_use_latent_space = False
+        if(rma_use_latent_space):
+            rma_latent_space = 8
+            rma_latent_encoder_hidden_features = 128
+            rma_latent_encoder_seed = 0
+        
+        rma_privileged_observation_space = 12 # P gain
+        rma_privileged_observation_space += 12 # D gain
+        rma_privileged_observation_space += 3 # clean linear velocity
+        rma_privileged_observation_space += 1 # base height error
+        rma_privileged_observation_space += 1 # terrain pitch
+        rma_privileged_observation_space += 4 # foot contacts
+
+        rma_output_space = rma_latent_space if rma_use_latent_space else rma_privileged_observation_space
         observation_space += rma_output_space
-        rma_batch_size = 32
-        rma_train_epochs = 500
+
+        single_rma_observation_space = 3 # base linear velocity
+        single_rma_observation_space += 3 # base angular velocity  
+        single_rma_observation_space += 3 # projected gravity in base frame
+        single_rma_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
+        single_rma_observation_space += 12 # joint positions
+        single_rma_observation_space += 12 # joint velocities
+        single_rma_observation_space += 12 # last actions
+        rma_history_length = 5
+        rma_observation_space = single_rma_observation_space*rma_history_length
+    
+        rma_batch_size = 512
+        rma_train_epochs = 1000
         rma_lr = 1e-3
         rma_ep_saving_interval = 1000
         rma_ep_saving_start = 6000
-        
 
-    use_filter_actions = True
 
-    
     # asymmetric ppo
-    use_asymmetric_ppo = False
+    use_asymmetric_ppo = True
     if(use_asymmetric_ppo):
         state_space = observation_space
-        #state_space += 12 # P gain
-        #state_space += 12 # D gain
-        #state_space += 1*17 # mass*num_bodies
-        #state_space += 1*17 # inertia*num_bodies
-        #state_space += 1 # wrench
-        #state_space += 12 # friction static
-        #state_space += 12 # friction dynamic
-        #state_space += 12 # armature
-        #state_space += 1 # restitution
+        state_space += 12 #P gain
+        state_space += 12 #D gain
         state_space += 2 #base pitch and height
         state_space += 3 #clean lin vel b
         state_space += 4 #contacts foot
+    else:
+        state_space = 0
+
 
     use_amp = False
-
-    observation_base_linear_scale = 1.0
-    observation_base_ang_vel_scale = 1.0
-    observation_joint_vel_scale = 1.0
 
 
     # simulation
@@ -445,18 +460,56 @@ class HyQRealRoughBlindEnvCfg(HyQRealFlatEnvCfg):
 
 
 @configclass
-class HyQRealRoughVisionEnvCfg(HyQRealFlatEnvCfg):
-    # env
-    #observation_space = 276
-    observation_space = 429
+class HyQRealRoughVisionEnvCfg(HyQRealRoughBlindEnvCfg):
+
+    def __post_init__(self) -> None:
+        height_map_x_points = int(round(self.height_scanner2.pattern_cfg.size[0] / self.height_scanner2.pattern_cfg.resolution)) + 1
+        height_map_y_points = int(round(self.height_scanner2.pattern_cfg.size[1] / self.height_scanner2.pattern_cfg.resolution)) + 1
+        self.observation_space = self.observation_space + height_map_x_points * height_map_y_points
+
+        self.feet_edge_reward_scale = -1.0
+
+    use_vision = True
 
     # we add a height scanner for perceptive locomotion
-    height_scanner = RayCasterCfg(
+    height_scanner2 = RayCasterCfg(
         prim_path="/World/envs/env_.*/Robot/base",
-        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
-        #attach_yaw_only=True,
+        offset=RayCasterCfg.OffsetCfg(pos=(0.4, 0.0, 0.0)),
         ray_alignment='yaw',
-        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.2, 1.2]),
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[0.6, 0.8]),
         debug_vis=False,
         mesh_prim_paths=["/World/ground"],
+    )
+
+    # we add a height scanner for feet edge reward
+    height_scanner3 = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+        ray_alignment='yaw',
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.8, 0.8]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+    #camera_usd = CAMERA_USD_CFG
+    use_depth_camera = False
+    depth_camera = MultiMeshRayCasterCameraCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        update_period=1 / 60,
+        offset=MultiMeshRayCasterCameraCfg.OffsetCfg(pos=(0.33, 0.0, 0.08), rot=(-0.405579, 0.579228, -0.579228, 0.405579)),
+        mesh_prim_paths=[
+            "/World/ground",
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/base/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FL_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FR_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RL_.*/visuals"),
+            #MultiMeshRayCasterCameraCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RR_.*/visuals"),
+        ],
+        pattern_cfg=patterns.PinholeCameraPatternCfg(
+            focal_length=24.0,
+            horizontal_aperture=20.955,
+            height=120,
+            width=240,
+        ),
+        debug_vis=True,
     )

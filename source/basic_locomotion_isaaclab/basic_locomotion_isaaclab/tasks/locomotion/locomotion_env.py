@@ -30,7 +30,7 @@ from .go2_env_cfg import Go2FlatEnvCfg, Go2RoughVisionEnvCfg, Go2RoughBlindEnvCf
 from .hyqreal_env_cfg import HyQRealFlatEnvCfg, HyQRealRoughVisionEnvCfg, HyQRealRoughBlindEnvCfg
 from .b2_env_cfg import B2FlatEnvCfg, B2RoughVisionEnvCfg, B2RoughBlindEnvCfg
 
-from basic_locomotion_isaaclab.tasks.supervised_learning_networks import SimpleNN
+from basic_locomotion_isaaclab.tasks.supervised_learning_networks import FrozenRandomMlpEncoder, create_supervised_network
 
 class LocomotionEnv(DirectRLEnv):
     cfg: AliengoFlatEnvCfg | AliengoRoughBlindEnvCfg | AliengoRoughVisionEnvCfg | Go2FlatEnvCfg | Go2RoughVisionEnvCfg | Go2RoughBlindEnvCfg | HyQRealFlatEnvCfg | HyQRealRoughVisionEnvCfg | HyQRealRoughBlindEnvCfg
@@ -71,9 +71,23 @@ class LocomotionEnv(DirectRLEnv):
 
         # RMA
         if(cfg.use_rma == True):
-            self._rma_network = SimpleNN(cfg.rma_observation_space, cfg.rma_output_space)
+            self._rma_network = create_supervised_network(
+                cfg.rma_observation_space,
+                cfg.rma_output_space,
+                network_type=getattr(cfg, "rma_network_type", "mlp"),
+                sequence_length=cfg.rma_history_length,
+            )
             self._rma_network.to(self.device)
-            self._observation_history_rma = torch.zeros(self.num_envs, cfg.history_length, cfg.single_rma_observation_space, device=self.device)
+            
+            if self.cfg.rma_use_latent_space:
+                self._rma_latent_encoder = FrozenRandomMlpEncoder(
+                    cfg.rma_privileged_observation_space,
+                    cfg.rma_output_space,
+                    hidden_features=getattr(cfg, "rma_latent_encoder_hidden_features", 128),
+                    seed=getattr(cfg, "rma_latent_encoder_seed", 0),
+                )
+                self._rma_latent_encoder.to(self.device)
+            self._observation_history_rma = torch.zeros(self.num_envs, cfg.rma_history_length, cfg.single_rma_observation_space, device=self.device)
             if self.cfg.observation_noise_model:
                 self._observation_noise_model_rma: NoiseModel = self.cfg.observation_noise_model.class_type(
                     self.cfg.observation_noise_model, num_envs=self.num_envs, device=self.device
@@ -81,9 +95,14 @@ class LocomotionEnv(DirectRLEnv):
 
         # Learned State Estimator
         if(cfg.use_concurrent_state_est == True):
-            self._concurrent_state_est_network = SimpleNN(cfg.concurrent_state_est_observation_space, cfg.concurrent_state_est_output_space)
+            self._concurrent_state_est_network = create_supervised_network(
+                cfg.concurrent_state_est_observation_space,
+                cfg.concurrent_state_est_output_space,
+                network_type=getattr(cfg, "concurrent_state_est_network_type", "mlp"),
+                sequence_length=cfg.concurrent_state_est_history_length,
+            )
             self._concurrent_state_est_network.to(self.device)
-            self._observation_history_concurrent_state_est = torch.zeros(self.num_envs, cfg.history_length, cfg.single_concurrent_state_est_observation_space, device=self.device)
+            self._observation_history_concurrent_state_est = torch.zeros(self.num_envs, cfg.concurrent_state_est_history_length, cfg.single_concurrent_state_est_observation_space, device=self.device)
             if self.cfg.observation_noise_model:
                 self._observation_noise_model_concurrent_state_est: NoiseModel = self.cfg.observation_noise_model.class_type(
                     self.cfg.observation_noise_model, num_envs=self.num_envs, device=self.device
@@ -227,7 +246,7 @@ class LocomotionEnv(DirectRLEnv):
         # Choosing the main source of observation
         if(self.cfg.use_concurrent_state_est):
             # If concurrent SE/Learned State Estimator, we predict linear and angular vel from IMU
-            base_linear = self._get_concurrent_state_estimation(clock_data)
+            base_linear = self._get_concurrent_state_estimation()
             base_ang_vel = self._imu.data.ang_vel_b
             projected_gravity_b = self._imu.data.projected_gravity_b
         elif(self.cfg.use_imu):
@@ -284,7 +303,7 @@ class LocomotionEnv(DirectRLEnv):
         # If RMA, we add some other predicted obs
         if(self.cfg.use_rma):
             # Predict the RMA observation
-            obs_rma = self._get_rma(clock_data)
+            obs_rma = self._get_rma()
             obs = torch.cat((obs, obs_rma), dim=-1)
 
 
@@ -813,12 +832,18 @@ class LocomotionEnv(DirectRLEnv):
         self._phase_signal[env_ids] = self._phase_offset[env_ids].clone()# + self.step_dt * self._step_freq * torch.rand(env_ids.shape[0], 1, device=self.device)*10.
         self._phase_signal[env_ids] = self._phase_signal[env_ids]  % 1.0
 
-        # Reset noise
+        # Reset observation history
+        self._observation_history[env_ids] *= 0.0
+
+        # Reset obs and noise concurrent
         if(self.cfg.use_concurrent_state_est):
+            self._observation_history_concurrent_state_est[env_ids] *= 0.0
             if self.cfg.observation_noise_model:
                 self._observation_noise_model_concurrent_state_est.reset(env_ids)
         
+        # Reset obs and noise rma
         if(self.cfg.use_rma):
+            self._observation_history_rma[env_ids] *= 0.0
             if self.cfg.observation_noise_model:
                 self._observation_noise_model_rma.reset(env_ids)
 
@@ -939,7 +964,7 @@ class LocomotionEnv(DirectRLEnv):
             self._commands[fixed_env_ids, :3] *= 0.0
 
 
-    def _get_concurrent_state_estimation(self, clock_data):
+    def _get_concurrent_state_estimation(self):
         # Using a supervised learning state estimation
         obs_concurrent_state_est = torch.cat(
             [
@@ -952,7 +977,6 @@ class LocomotionEnv(DirectRLEnv):
                     self._robot.data.joint_pos[:, self._ids_joints_order] - self._robot.data.default_joint_pos[:, self._ids_joints_order],
                     self._robot.data.joint_vel[:, self._ids_joints_order] * self.cfg.observation_joint_vel_scale,
                     self._actions,
-                    clock_data,
                 )
                 if tensor is not None
             ],
@@ -994,7 +1018,7 @@ class LocomotionEnv(DirectRLEnv):
         return linear_velocity_b  
 
 
-    def _get_rma(self, clock_data):
+    def _get_rma(self):
         # Learning privileged information via supervised learning
         obs_rma = torch.cat(
             [
@@ -1007,7 +1031,6 @@ class LocomotionEnv(DirectRLEnv):
                     self._robot.data.joint_pos[:, self._ids_joints_order] - self._robot.data.default_joint_pos[:, self._ids_joints_order],
                     self._robot.data.joint_vel[:, self._ids_joints_order] * self.cfg.observation_joint_vel_scale,
                     self._actions,
-                    clock_data,
                 )
                 if tensor is not None
             ],
@@ -1023,8 +1046,14 @@ class LocomotionEnv(DirectRLEnv):
             obs = self._observation_noise_model_rma(obs.clone())  
         
         outputs_rma = self._get_privileged_observation()
+        
+        if self.cfg.rma_use_latent_space:
+            with torch.no_grad():
+                target_rma = self._rma_latent_encoder.encode(outputs_rma)
+        else:
+            target_rma = outputs_rma
 
-        self._rma_network.dataset.add_sample(obs, outputs_rma)
+        self._rma_network.dataset.add_sample(obs, target_rma)
 
         # Prediction
         num_episode_from_start = self.common_step_counter / 24. #self.max_episode_length #HACK this should be taken from rsl rl
@@ -1034,7 +1063,7 @@ class LocomotionEnv(DirectRLEnv):
                 prediction_rma = self._rma_network(obs)
             obs_rma = prediction_rma
         else:
-            obs_rma = outputs_rma
+            obs_rma = target_rma
 
         # Train at some interval
         if (num_episode_from_start % self.cfg.rma_ep_saving_interval == 0 and 
@@ -1053,31 +1082,16 @@ class LocomotionEnv(DirectRLEnv):
     def _get_privileged_observation(self):
         asset_cfg = SceneEntityCfg("robot", joint_names=[".*"])
         asset: Articulation = self.scene[asset_cfg.name]
-        """hip_static_friction = asset.actuators["hip"].friction_static
-        thigh_static_friction = asset.actuators["thigh"].friction_static
-        calf_static_friction = asset.actuators["calf"].friction_static
-        
-        hip_dynamic_friction = asset.actuators["hip"].friction_dynamic
-        thigh_dynamic_friction = asset.actuators["thigh"].friction_dynamic
-        calf_dynamic_friction = asset.actuators["calf"].friction_dynamic
 
-        hip_armature = asset.actuators["hip"].armature
-        thigh_armature = asset.actuators["thigh"].armature
-        calf_armature = asset.actuators["calf"].armature
-
+        # PD of the joints
         hip_stiffness = asset.actuators["hip"].stiffness
         thigh_stiffness = asset.actuators["thigh"].stiffness
         calf_stiffness = asset.actuators["calf"].stiffness
 
         hip_damping = asset.actuators["hip"].damping
         thigh_damping = asset.actuators["thigh"].damping
-        calf_damping = asset.actuators["calf"].damping"""
-
-        #asset_cfg_base = SceneEntityCfg("robot", body_names="base")
-        #asset_base = self.scene[asset_cfg_base.name]
-        #masses = asset_base.root_physx_view.get_masses()
-        #inertias = asset_base.root_physx_view.get_inertias()
-
+        calf_damping = asset.actuators["calf"].damping
+        
         default_stiffness = asset.data.default_joint_stiffness[0][0]
         default_damping = asset.data.default_joint_damping[0][0]
 
@@ -1113,16 +1127,12 @@ class LocomotionEnv(DirectRLEnv):
         contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_contact_sensor_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
 
         obs_privileged = torch.cat(( 
-                            #hip_stiffness/default_stiffness, thigh_stiffness/default_stiffness, calf_stiffness/default_stiffness, #P gain
-                            #hip_damping/default_damping, thigh_damping/default_damping, calf_damping/default_damping, #D gain
+                            hip_stiffness/default_stiffness, thigh_stiffness/default_stiffness, calf_stiffness/default_stiffness, #P gain
+                            hip_damping/default_damping, thigh_damping/default_damping, calf_damping/default_damping, #D gain
                             self._robot.data.root_lin_vel_b,
                             height_error.unsqueeze(1),
                             terrain_pitch.unsqueeze(1),
                             contacts_foot,
-                            #masses, inertias,
-                            #hip_static_friction, thigh_static_friction, calf_static_friction,  
-                            #hip_dynamic_friction, thigh_dynamic_friction, calf_dynamic_friction, 
-                            #hip_armature, thigh_armature, calf_armature
                             ) 
                         , dim=-1)
         return obs_privileged

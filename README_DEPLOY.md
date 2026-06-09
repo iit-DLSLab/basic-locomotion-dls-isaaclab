@@ -8,9 +8,6 @@
 
 
 ```bash
-conda env create -f mamba_environment_ros1.yaml
-conda activate basic_locomotion_isaaclab_ros1_env
-
 conda env create -f mamba_environment_ros2.yaml
 conda activate basic_locomotion_isaaclab_ros2_env
 ```
@@ -61,7 +58,7 @@ Choose in deploy/config.py the robot/policy you want to run. This script matches
 
 ```bash
 ## Sim-to-Real with ROS2
-python3 deploy/run_controller_ros2.py (TERMINAL 1)
+python3 run_controller_ros2.py (TERMINAL 1)
 
 ros2 launch teleop_twist_joy teleop-launch.py joy_config:='xbox' (if want joystick) (TERMINAL 2)
 ```

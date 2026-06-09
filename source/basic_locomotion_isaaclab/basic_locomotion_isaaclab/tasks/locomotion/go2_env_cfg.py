@@ -87,15 +87,15 @@ class EventCfg:
     )
 
     actuator_gains = EventTerm(
-    func=mdp.randomize_actuator_gains,
-    mode="reset",
-    params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-        "stiffness_distribution_params": (-2.0, 2.0),
-        "damping_distribution_params": (-0.5, 0.5),
-        "operation": "add",
-        "distribution": "uniform",
-    },
+        func=mdp.randomize_actuator_gains,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "stiffness_distribution_params": (-2.0, 2.0),
+            "damping_distribution_params": (-0.5, 0.5),
+            "operation": "add",
+            "distribution": "uniform",
+        },
     )
     
     # interval
@@ -112,84 +112,115 @@ class EventCfg:
 
 @configclass
 class Go2FlatEnvCfg(DirectRLEnvCfg):
-    # Viewer
-    #viewer = ViewerCfg(eye=(1.5, 1.5, 0.3), origin_type="world", env_index=0, asset_name="robot")
-
     # env
     episode_length_s = 20.0
     decimation = 4
     action_scale = 0.5
     action_space = 12
-    observation_space = 48
-    state_space = 0
+    observation_space = 3 # base linear velocity
+    observation_space += 3 # base angular velocity  
+    observation_space += 3 # projected gravity in base frame
+    observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
+    observation_space += 12 # joint positions
+    observation_space += 12 # joint velocities
+    observation_space += 12 # last actions
 
     use_clock_signal = True
     if(use_clock_signal):
-        observation_space += 4
+        observation_space += 4 # clock signal for periodic gait
+
+    single_observation_space = observation_space # Usefull for concatenating history
 
     # observation history
     use_observation_history = True
-    history_length = 5
     if(use_observation_history):
-        single_observation_space = observation_space # Placeholder. Later we may add map, but only from the latest obs
+        history_length = 5
         observation_space *= history_length
+    else:
+        history_length = 1
+
+
+    observation_base_linear_scale = 1.0
+    observation_base_ang_vel_scale = 1.0
+    observation_joint_vel_scale = 0.1
+
 
     use_imu = False
 
+    
     use_concurrent_state_est = True
     if(use_concurrent_state_est):
+        concurrent_state_est_network_type = "tcn" # "mlp" or "tcn"
+        
         concurrent_state_est_output_space = 3 #lin_vel_b
-        single_concurrent_state_est_observation_space = single_observation_space
-        concurrent_state_est_observation_space = observation_space
+        
+        single_concurrent_state_est_observation_space = 3 # base linear velocity
+        single_concurrent_state_est_observation_space += 3 # base angular velocity  
+        single_concurrent_state_est_observation_space += 3 # projected gravity in base frame
+        single_concurrent_state_est_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
+        single_concurrent_state_est_observation_space += 12 # joint positions
+        single_concurrent_state_est_observation_space += 12 # joint velocities
+        single_concurrent_state_est_observation_space += 12 # last actions
+        concurrent_state_est_history_length = 5 
+        concurrent_state_est_observation_space = single_concurrent_state_est_observation_space*concurrent_state_est_history_length
+        
         concurrent_state_est_batch_size = 512
         concurrent_state_est_train_epochs = 1000
         concurrent_state_est_lr = 1e-3
         concurrent_state_est_ep_saving_interval = 1000
         concurrent_state_est_ep_saving_start = 6000
 
+
     use_rma = False
     if(use_rma):
-        rma_output_space = 12 # P gain
-        rma_output_space += 12 # D gain 
-        #rma_output_space += 12 # friction static
-        #rma_output_space += 12 # friction dynamic
-        #rma_output_space += 12 # armature
-        single_rma_observation_space = single_observation_space
-        rma_observation_space = observation_space
+        rma_network_type = "mlp" # "mlp" or "tcn"
+        rma_use_latent_space = False
+        if(rma_use_latent_space):
+            rma_latent_space = 8
+            rma_latent_encoder_hidden_features = 128
+            rma_latent_encoder_seed = 0
+        
+        rma_privileged_observation_space = 12 # P gain
+        rma_privileged_observation_space += 12 # D gain
+        rma_privileged_observation_space += 3 # clean linear velocity
+        rma_privileged_observation_space += 1 # base height error
+        rma_privileged_observation_space += 1 # terrain pitch
+        rma_privileged_observation_space += 4 # foot contacts
+
+        rma_output_space = rma_latent_space if rma_use_latent_space else rma_privileged_observation_space
         observation_space += rma_output_space
+
+        single_rma_observation_space = 3 # base linear velocity
+        single_rma_observation_space += 3 # base angular velocity  
+        single_rma_observation_space += 3 # projected gravity in base frame
+        single_rma_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
+        single_rma_observation_space += 12 # joint positions
+        single_rma_observation_space += 12 # joint velocities
+        single_rma_observation_space += 12 # last actions
+        rma_history_length = 5
+        rma_observation_space = single_rma_observation_space*rma_history_length
+    
         rma_batch_size = 512
         rma_train_epochs = 1000
         rma_lr = 1e-3
         rma_ep_saving_interval = 1000
         rma_ep_saving_start = 6000
-        
-    
-    use_filter_actions = True
 
-    
+
     # asymmetric ppo
     use_asymmetric_ppo = True
     if(use_asymmetric_ppo):
         state_space = observation_space
-        #state_space += 12 # P gain
-        #state_space += 12 # D gain
-        #state_space += 1*17 # mass*num_bodies
-        #state_space += 1*17 # inertia*num_bodies
-        #state_space += 1 # wrench
-        #state_space += 12 # friction static
-        #state_space += 12 # friction dynamic
-        #state_space += 12 # armature
-        #state_space += 1 # restitution
+        state_space += 12 #P gain
+        state_space += 12 #D gain
         state_space += 2 #base pitch and height
         state_space += 3 #clean lin vel b
         state_space += 4 #contacts foot
+    else:
+        state_space = 0
+
 
     use_amp = False
-
-    observation_base_linear_scale = 1.0
-    observation_base_ang_vel_scale = 1.0
-    observation_joint_vel_scale = 0.1
-
 
 
     # simulation
@@ -274,8 +305,10 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     desired_base_height = 0.30
     desired_feet_height = 0.05
 
+
     # Desired clip actions
     desired_clip_actions = 3.0
+    use_filter_actions = True
         
 
     # Tracking reward scale
@@ -324,11 +357,11 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     feet_edge_radius_px = 0
     visualize_edge_map = False
 
-    feet_vertical_surface_contacts_reward_scale = -0.25
+    feet_vertical_surface_contacts_reward_scale = -2.5
 
 
     # Contact suggestion reward scale
-    periodic_contact_suggestion_reward_scale =  0.25
+    periodic_contact_suggestion_reward_scale =  0.5
     # Desired step freq and duty factor (if periodic gait contact suggestion is used)
     desired_step_freq = 1.4
     desired_duty_factor = 0.65
@@ -406,14 +439,13 @@ class Go2RoughBlindEnvCfg(Go2FlatEnvCfg):
 
 
 @configclass
-class Go2RoughVisionEnvCfg(Go2FlatEnvCfg):
+class Go2RoughVisionEnvCfg(Go2RoughBlindEnvCfg):
 
     def __post_init__(self) -> None:
         height_map_x_points = int(round(self.height_scanner2.pattern_cfg.size[0] / self.height_scanner2.pattern_cfg.resolution)) + 1
         height_map_y_points = int(round(self.height_scanner2.pattern_cfg.size[1] / self.height_scanner2.pattern_cfg.resolution)) + 1
         self.observation_space = self.observation_space + height_map_x_points * height_map_y_points
 
-        self.feet_vertical_surface_contacts_reward_scale = -2.5
         self.feet_edge_reward_scale = -1.0
 
     use_vision = True
@@ -427,7 +459,6 @@ class Go2RoughVisionEnvCfg(Go2FlatEnvCfg):
         debug_vis=False,
         mesh_prim_paths=["/World/ground"],
     )
-
 
     # we add a height scanner for feet edge reward
     height_scanner3 = RayCasterCfg(
@@ -460,76 +491,4 @@ class Go2RoughVisionEnvCfg(Go2FlatEnvCfg):
             width=240,
         ),
         debug_vis=True,
-    )
-
-    """depth_camera = TiledCameraCfg(
-        prim_path="/World/envs/env_.*/Camera",
-        offset=TiledCameraCfg.OffsetCfg(pos=(-5.0, 0.0, 2.0), rot=(1.0, 0.0, 0.0, 0.0), convention="world"),
-        data_types=["depth"],
-        spawn=sim_utils.PinholeCameraCfg(
-            focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 20.0)
-        ),
-        width=120,
-        height=240,
-    )"""
-
-
-    ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
-        curriculum=False,
-        size=(8.0, 8.0),
-        border_width=20.0,
-        num_rows=10,
-        num_cols=20,
-        horizontal_scale=0.1,
-        vertical_scale=0.005,
-        slope_threshold=0.75,
-        use_cache=False,
-        sub_terrains={
-            "flat": terrain_gen.MeshPlaneTerrainCfg(
-                proportion=0.2
-            ),
-            "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-                proportion=0.1, grid_width=0.45, grid_height_range=(0.05, 0.15), platform_width=2.0,
-            ),
-            "star": terrain_gen.MeshStarTerrainCfg(
-                proportion=0.1, num_bars=10, bar_width_range=(0.15, 0.20), bar_height_range=(0.05, 0.15), platform_width=2.0,
-            ),
-            "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
-                proportion=0.1, noise_range=(0.02, 0.06), noise_step=0.02, border_width=0.25
-            ),
-            "hf_pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
-                proportion=0.1, slope_range=(0.2, 0.4), platform_width=2.0, border_width=0.25
-            ),
-            "hf_pyramid_slope_inv": terrain_gen.HfInvertedPyramidSlopedTerrainCfg(
-                proportion=0.1, slope_range=(0.2, 0.4), platform_width=2.0, border_width=0.25
-            ),
-            "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-                proportion=0.15, step_height_range=(0.05, 0.25), step_width=0.3,
-                platform_width=3.0, border_width=1.0, holes=False,
-            ),
-            "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-                proportion=0.15, step_height_range=(0.05, 0.25), step_width=0.3,
-                platform_width=3.0, border_width=1.0, holes=False,
-            ),
-        },
-    )
-
-    """Rough terrains configuration."""
-    terrain = TerrainImporterCfg(
-        prim_path="/World/ground",
-        terrain_type="generator",
-        terrain_generator=ROUGH_TERRAINS_CFG,
-        max_init_terrain_level=10,
-        collision_group=-1,
-        physics_material=sim_utils.RigidBodyMaterialCfg(
-            friction_combine_mode="multiply",
-            restitution_combine_mode="multiply",
-            static_friction=1.0,
-            dynamic_friction=1.0,
-        ),
-        visual_material=sim_utils.MdlFileCfg(
-            mdl_path="{NVIDIA_NUCLEUS_DIR}/Materials/Base/Architecture/Shingles_01.mdl",
-            project_uvw=True,
-        ),
-        debug_vis=False,
     )
