@@ -45,4 +45,4 @@ deploy/ros1_ws/devel/
 deploy/ros1_ws/install/
 
 # Usd
-source/get_up_isaaclab/get_up_isaaclab/assets/pegasus_asset/
+source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/assets/pegasus_asset/
