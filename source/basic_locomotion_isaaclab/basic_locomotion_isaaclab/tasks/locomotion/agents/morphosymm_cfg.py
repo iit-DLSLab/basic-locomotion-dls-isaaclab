@@ -42,6 +42,7 @@ obs_space_names_actor = [
         "actions",
         "clock_data",
     ]*int(history_length)
+obs_space_names_actor += ["heightmap:7x9"]
 
 
 # Critic OBS
@@ -55,6 +56,7 @@ obs_space_names_critic = [
         "actions",
         "clock_data",
     ]*int(history_length)
+obs_space_names_critic += ["heightmap:7x9"]
 obs_space_names_critic += ["position_gains", "velocity_gains", "base_lin_vel", "base_pos_z", "base_pos_z", "clock_data"]
 
 
