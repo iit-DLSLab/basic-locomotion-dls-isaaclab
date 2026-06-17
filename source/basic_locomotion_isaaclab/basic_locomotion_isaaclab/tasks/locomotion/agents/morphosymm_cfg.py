@@ -25,6 +25,10 @@ class MorphologycalSymmetriesCfg:
     robot_name = None
     """The name of the robot to use inside Morphosymm."""
 
+    schedule_fixed_to_adaptive_switch = None
+    """The number of iterations to switch from fixed to adaptive schedule for the symmetry loss. 
+    If None, then no switch will happen. If the scheduler is set to adaptive, not change will be made."""
+
 
 # Actor OBS
 history_length = 5
