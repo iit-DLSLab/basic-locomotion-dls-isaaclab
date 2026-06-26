@@ -340,11 +340,12 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
 
     # Feet reward scale
     feet_air_time_reward_scale = 0.5 * 0.0
+    feet_air_time_variance_reward_scale = -1.0 * 0.0
 
-    feet_height_clearance_reward_scale = 0.25 * 0.0  
+    feet_height_clearance_aperiodic_reward_scale = 0.25 * 0.0  
     feet_height_clearance_periodic_reward_scale = 0.25
     
-    feet_height_clearance_mujoco_reward_scale = 0.25 * 0.0
+    feet_height_clearance_mujoco_aperiodic_reward_scale = 0.25 * 0.0
     feet_height_clearance_mujoco_periodic_reward_scale = 0.25 * 0.0
     
     feet_slide_reward_scale = -0.25 * 0.0

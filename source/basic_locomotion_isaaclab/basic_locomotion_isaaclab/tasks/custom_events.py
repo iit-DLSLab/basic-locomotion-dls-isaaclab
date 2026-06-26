@@ -222,3 +222,47 @@ def randomize_joint_delay_model(
                     second_order_delay_filter, second_order_delay_filter_distribution_params, env_ids, torch.arange(second_order_delay_filter.shape[1]), operation=operation, distribution=distribution
                 )[env_ids][:, actuator_joint_ids]
                 actuator.second_order_delay_filter[env_ids[:, None], actuator_joint_ids] = second_order_delay_filter
+
+
+def _sample_random_commands(self, env_ids: torch.Tensor | None = None) -> torch.Tensor:
+    num_commands = self.num_envs if env_ids is None else env_ids.shape[0]
+    commands = torch.empty(num_commands, self._commands.shape[1], device=self.device, dtype=self._commands.dtype)
+    commands.uniform_(-1.0, 1.0)
+    commands[:, 0] *= 0.5
+    commands[:, 1] *= 0.25
+    commands[:, 2] *= 0.5
+    return commands
+
+
+def _get_new_random_commands(self, env_ids: torch.Tensor | None = None):
+    if env_ids is not None:
+        self._commands[env_ids, :3] = _sample_random_commands(self, env_ids)
+
+    # Change direction while moving
+    resample_time = self.episode_length_buf == self.max_episode_length - 400
+    commands_resample = torch.zeros_like(self._commands).uniform_(-1.0, 1.0)
+    commands_resample[:, 0] *= 0.5
+    commands_resample[:, 1] *= 0.25 
+    commands_resample[:, 2] *= 0.5 
+    self._commands[:, :3] = self._commands[:, :3] * ~resample_time.unsqueeze(1).expand(-1, 3) + commands_resample * resample_time.unsqueeze(1).expand(-1, 3)
+
+    # Stop
+    rest_time = torch.logical_and(
+        self.episode_length_buf >= self.max_episode_length - 250,
+        self.episode_length_buf < self.max_episode_length - 150
+    )
+    self._commands[:, :3] *= ~rest_time.unsqueeze(1).expand(-1, 3)
+
+    # Move again
+    resample_time_2 = self.episode_length_buf == self.max_episode_length - 150
+    commands_resample_2 = torch.zeros_like(self._commands).uniform_(-1.0, 1.0)
+    commands_resample_2[:, 0] *= 0.5
+    commands_resample_2[:, 1] *= 0.25 
+    commands_resample_2[:, 2] *= 0.5 
+    self._commands[:, :3] = self._commands[:, :3] * ~resample_time_2.unsqueeze(1).expand(-1, 3) + commands_resample_2 * resample_time_2.unsqueeze(1).expand(-1, 3)        
+
+    # Took some envs, and put to zero the vel
+    num_fixed_envs = 500
+    if self.num_envs > num_fixed_envs:
+        fixed_env_ids = torch.arange(num_fixed_envs, device=self.device)
+        self._commands[fixed_env_ids, :3] *= 0.0

@@ -191,7 +191,22 @@ def feet_air_time(self) -> torch.Tensor:
     return feet_air_time
 
 
-def feet_height_clearance(self) -> torch.Tensor:
+def feet_air_time_variance(self):
+
+    last_air_time = torch.clip(self._contact_sensor.data.last_air_time[:, self._feet_contact_sensor_ids], max=0.5)
+    last_contact_time = torch.clip(self._contact_sensor.data.last_contact_time[:, self._feet_contact_sensor_ids], max=0.5)
+    variance_denominator = (4.0 - 1.0)#.clamp(min=1.0)
+
+    mean_air_time = torch.sum(last_air_time, dim=1) / 4.
+    mean_contact_time = torch.sum(last_contact_time, dim=1) / 4.
+    air_time_variance = torch.sum(torch.square(last_air_time - mean_air_time.unsqueeze(1)), dim=1)
+    contact_time_variance = torch.sum(torch.square(last_contact_time - mean_contact_time.unsqueeze(1)), dim=1)
+    feet_air_time_variance = (air_time_variance + contact_time_variance) / variance_denominator
+
+    return feet_air_time_variance
+
+
+def feet_height_clearance_aperiodic(self) -> torch.Tensor:
     height_data_scanner = self._height_scanner.data.ray_hits_w[..., 2]
     height_data_scanner = torch.nan_to_num(height_data_scanner, nan=0.0, posinf=1.0, neginf=-1.0)
     height_data_scanner = torch.clip(height_data_scanner, min=-5, max=5)
@@ -276,7 +291,7 @@ def feet_height_clearance_periodic(self) -> torch.Tensor:
     return feet_height_clearance_periodic
 
 
-def feet_height_clearance_mujoco(self) -> torch.Tensor:
+def feet_height_clearance_mujoco_aperiodic(self) -> torch.Tensor:
     height_data_scanner = self._height_scanner.data.ray_hits_w[..., 2]
     height_data_scanner = torch.nan_to_num(height_data_scanner, nan=0.0, posinf=1.0, neginf=-1.0)
     height_data_scanner = torch.clip(height_data_scanner, min=-5, max=5)

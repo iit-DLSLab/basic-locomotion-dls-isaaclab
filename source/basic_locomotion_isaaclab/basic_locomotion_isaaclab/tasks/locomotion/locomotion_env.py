@@ -28,7 +28,7 @@ from .hyqreal_env_cfg import HyQRealFlatEnvCfg, HyQRealRoughVisionEnvCfg, HyQRea
 from .b2_env_cfg import B2FlatEnvCfg, B2RoughVisionEnvCfg, B2RoughBlindEnvCfg
 from .pegasus_env_cfg import PegasusFlatEnvCfg, PegasusRoughVisionEnvCfg, PegasusRoughBlindEnvCfg
 
-from basic_locomotion_isaaclab.tasks import custom_observations, custom_rewards
+from basic_locomotion_isaaclab.tasks import custom_observations, custom_rewards, custom_events
 from basic_locomotion_isaaclab.tasks.supervised_learning_networks import FrozenRandomMlpEncoder, create_supervised_network
 
 class LocomotionEnv(DirectRLEnv):
@@ -129,10 +129,12 @@ class LocomotionEnv(DirectRLEnv):
                 "joints_energy_l1",
                 
                 "feet_air_time",
+                "feet_air_time_variance",
+
                 "feet_height_clearance_periodic",
-                "feet_height_clearance",
+                "feet_height_clearance_aperiodic",
                 "feet_height_clearance_mujoco_periodic",
-                "feet_height_clearance_mujoco",
+                "feet_height_clearance_mujoco_aperiodic",
                 "feet_slide",
                 "feet_to_hip_distance_l2",
                 "feet_edge",
@@ -226,8 +228,8 @@ class LocomotionEnv(DirectRLEnv):
 
     def _get_observations(self) -> dict:
         
-        # This is a custom event, to be moved in custom_events.py
-        self._get_new_random_commands()
+        # Sample new commands if needed
+        custom_events._get_new_random_commands(self)
 
 
         # Observation --------------------------------------------------------------------------------------
@@ -359,6 +361,7 @@ class LocomotionEnv(DirectRLEnv):
         joints_energy_l1 = custom_rewards.joints_energy_l1(self)
 
         feet_air_time = custom_rewards.feet_air_time(self)
+        feet_air_time_variance = custom_rewards.feet_air_time_variance(self)
 
         feet_slide = custom_rewards.feet_slide(self)
         feet_edge = custom_rewards.feet_edge(self)
@@ -391,10 +394,11 @@ class LocomotionEnv(DirectRLEnv):
             "joints_energy_l1": joints_energy_l1 * self.cfg.joints_energy_reward_scale * self.step_dt,
 
             "feet_air_time": feet_air_time * self.cfg.feet_air_time_reward_scale * self.step_dt,
+            "feet_air_time_variance": feet_air_time_variance * self.cfg.feet_air_time_variance_reward_scale * self.step_dt,
             
-            "feet_height_clearance": feet_height_clearance * self.cfg.feet_height_clearance_reward_scale * self.step_dt,
+            "feet_height_clearance_aperiodic": feet_height_clearance_aperiodic * self.cfg.feet_height_clearance_aperiodic_reward_scale * self.step_dt,
             "feet_height_clearance_periodic": feet_height_clearance_periodic * self.cfg.feet_height_clearance_periodic_reward_scale * self.step_dt,
-            "feet_height_clearance_mujoco": feet_height_clearance_mujoco * self.cfg.feet_height_clearance_mujoco_reward_scale * self.step_dt,
+            "feet_height_clearance_mujoco_aperiodic": feet_height_clearance_mujoco_aperiodic * self.cfg.feet_height_clearance_mujoco_aperiodic_reward_scale * self.step_dt,
             "feet_height_clearance_mujoco_periodic": feet_height_clearance_mujoco_periodic * self.cfg.feet_height_clearance_mujoco_periodic_reward_scale * self.step_dt,
             
             "feet_slide": feet_slide * self.cfg.feet_slide_reward_scale * self.step_dt,
@@ -449,15 +453,14 @@ class LocomotionEnv(DirectRLEnv):
         if len(env_ids) == self.num_envs: 
             # Spread out the resets to avoid spikes in training when many environments reset at a similar time
             self.episode_length_buf[:] = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
+        
+        # Reset actions and action filtering
         self._actions[env_ids] = 0.0
         self._previous_actions[env_ids] = 0.0
         self._previous_previous_actions[env_ids] = 0.0
         
-        # Sample new commands
-        self._commands[env_ids] = torch.zeros_like(self._commands[env_ids]).uniform_(-1.0, 1.0)
-        self._commands[env_ids, 0] *= 0.5
-        self._commands[env_ids, 1] *= 0.25 
-        self._commands[env_ids, 2] *= 0.5 
+        # Reset commands
+        custom_events._get_new_random_commands(self, env_ids)
 
         # Reset swing peak
         self._swing_peak[env_ids] = torch.tensor([0.0, 0.0, 0.0, 0.0], device=self.device)
@@ -517,35 +520,3 @@ class LocomotionEnv(DirectRLEnv):
 
     def _debug_vis_callback(self, event):
         custom_rewards._debug_vis_callback(self, event)
-
-
-    def _get_new_random_commands(self):
-        
-        # Change direction while moving
-        resample_time = self.episode_length_buf == self.max_episode_length - 400
-        commands_resample = torch.zeros_like(self._commands).uniform_(-1.0, 1.0)
-        commands_resample[:, 0] *= 0.5
-        commands_resample[:, 1] *= 0.25 
-        commands_resample[:, 2] *= 0.5 
-        self._commands[:, :3] = self._commands[:, :3] * ~resample_time.unsqueeze(1).expand(-1, 3) + commands_resample * resample_time.unsqueeze(1).expand(-1, 3)
-
-        # Stop
-        rest_time = torch.logical_and(
-            self.episode_length_buf >= self.max_episode_length - 250,
-            self.episode_length_buf < self.max_episode_length - 150
-        )
-        self._commands[:, :3] *= ~rest_time.unsqueeze(1).expand(-1, 3)
-
-        # Move again
-        resample_time_2 = self.episode_length_buf == self.max_episode_length - 150
-        commands_resample_2 = torch.zeros_like(self._commands).uniform_(-1.0, 1.0)
-        commands_resample_2[:, 0] *= 0.5
-        commands_resample_2[:, 1] *= 0.25 
-        commands_resample_2[:, 2] *= 0.5 
-        self._commands[:, :3] = self._commands[:, :3] * ~resample_time_2.unsqueeze(1).expand(-1, 3) + commands_resample_2 * resample_time_2.unsqueeze(1).expand(-1, 3)        
-
-        # Took some envs, and put to zero the vel
-        num_fixed_envs = 500
-        if self.num_envs > num_fixed_envs:
-            fixed_env_ids = torch.arange(num_fixed_envs, device=self.device)
-            self._commands[fixed_env_ids, :3] *= 0.0
