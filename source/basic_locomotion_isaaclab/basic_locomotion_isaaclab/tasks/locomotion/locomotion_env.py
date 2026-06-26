@@ -297,19 +297,19 @@ class LocomotionEnv(DirectRLEnv):
             obs = torch.cat((obs, height_data), dim=-1)   
 
 
-        # If RMA, we add some other predicted obs
-        if(self.cfg.use_rma):
-            # Predict the RMA observation
-            obs_rma = custom_observations._get_rma(self)
-            obs = torch.cat((obs, obs_rma), dim=-1)
-
-
         # Critic OBS could be different if needed
         if(self.cfg.use_asymmetric_ppo):
             obs_critic = custom_observations._get_privileged_observation(self)
             observations["critic"] = torch.cat((obs, obs_critic), dim=-1)
         else:
             observations["critic"] = obs
+
+
+        # If RMA, we add some other predicted obs AFTER the critic asymmetric obs to avoid duplication
+        if(self.cfg.use_rma):
+            # Predict the RMA observation
+            obs_rma = custom_observations._get_rma(self)
+            obs = torch.cat((obs, obs_rma), dim=-1)
 
 
         # Actor OBS - here after the critic to avoid duplication with rma obs
