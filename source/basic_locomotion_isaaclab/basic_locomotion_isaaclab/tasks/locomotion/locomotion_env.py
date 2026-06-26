@@ -367,10 +367,10 @@ class LocomotionEnv(DirectRLEnv):
         feet_edge = custom_rewards.feet_edge(self)
         periodic_contact_suggestion = custom_rewards.periodic_contact_suggestion(self)
         stance_contact_suggestion = custom_rewards.stance_contact_suggestion(self)
-        feet_height_clearance_mujoco = custom_rewards.feet_height_clearance_mujoco(self)
+        feet_height_clearance_mujoco_aperiodic = custom_rewards.feet_height_clearance_mujoco_aperiodic(self)
         feet_height_clearance_mujoco_periodic = custom_rewards.feet_height_clearance_mujoco_periodic(self)
         feet_height_clearance_periodic = custom_rewards.feet_height_clearance_periodic(self)
-        feet_height_clearance = custom_rewards.feet_height_clearance(self)
+        feet_height_clearance_aperiodic = custom_rewards.feet_height_clearance_aperiodic(self)
         feet_to_hip_distance_l2 = custom_rewards.feet_to_hip_distance_l2(self)
         feet_vertical_surface_contacts = custom_rewards.feet_vertical_surface_contacts(self)
 
