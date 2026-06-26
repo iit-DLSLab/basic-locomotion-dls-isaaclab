@@ -333,7 +333,6 @@ class B2FlatEnvCfg(DirectRLEnvCfg):
     feet_height_clearance_mujoco_periodic_reward_scale = 0.25 * 0.0
 
     feet_slide_reward_scale = -0.25 * 0.0
-    feet_to_base_distance_reward_scale = 0.25 * 0.0
 
     feet_to_hip_distance_reward_scale = 1.5
     # This is used in loocmotion_env.py for the above reward

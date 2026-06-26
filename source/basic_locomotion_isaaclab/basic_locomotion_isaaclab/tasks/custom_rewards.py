@@ -396,17 +396,6 @@ def feet_slide(self) -> torch.Tensor:
     return feet_slide
 
 
-def feet_to_base_distance_l2(self) -> torch.Tensor:
-    feet_to_base_distance_x = torch.square(
-        torch.mean(self._robot.data.body_pos_w[:, self._feet_ids_robot, 0], dim=1) - self._robot.data.root_state_w[:, 0]
-    )
-    feet_to_base_distance_y = torch.square(
-        torch.mean(self._robot.data.body_pos_w[:, self._feet_ids_robot, 1], dim=1) - self._robot.data.root_state_w[:, 1]
-    )
-    feet_to_base_distance = -torch.sqrt(feet_to_base_distance_x + feet_to_base_distance_y)
-    return feet_to_base_distance
-
-
 def feet_to_hip_distance_l2(self) -> torch.Tensor:
     should_move = torch.norm(self._commands[:, :3], dim=1) > 0.01
     rot_w2h = math_utils.matrix_from_quat(math_utils.yaw_quat(self._robot.data.root_quat_w))
