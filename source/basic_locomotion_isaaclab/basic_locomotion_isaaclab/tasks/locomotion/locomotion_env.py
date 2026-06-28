@@ -16,7 +16,21 @@ from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensor, ContactSensorCfg, RayCaster, RayCasterCfg, RayCasterCamera, RayCasterCameraCfg, MultiMeshRayCasterCamera, MultiMeshRayCasterCameraCfg, TiledCameraCfg, TiledCamera, patterns, Imu
+from isaaclab.sensors import (
+    ContactSensor,
+    ContactSensorCfg,
+    Imu,
+    MultiMeshRayCaster,
+    MultiMeshRayCasterCamera,
+    MultiMeshRayCasterCameraCfg,
+    RayCaster,
+    RayCasterCamera,
+    RayCasterCameraCfg,
+    RayCasterCfg,
+    TiledCamera,
+    TiledCameraCfg,
+    patterns,
+)
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
@@ -186,6 +200,11 @@ class LocomotionEnv(DirectRLEnv):
             ##self._depth_camera = TiledCamera(self.cfg.depth_camera)
             self.scene.sensors["depth_camera"] = self._depth_camera
             pass
+
+        # we add the Unitree L2 LiDAR if needed for vision-based locomotion
+        if(getattr(self.cfg, "use_unitree_l2_lidar", False)):
+            self._unitree_l2_lidar = MultiMeshRayCaster(self.cfg.unitree_l2_lidar)
+            self.scene.sensors["unitree_l2_lidar"] = self._unitree_l2_lidar
 
         # we add an imu
         self._imu = Imu(self.cfg.imu)

@@ -6,7 +6,14 @@ from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, MultiMeshRayCasterCameraCfg, TiledCameraCfg, patterns
+from isaaclab.sensors import (
+    ContactSensorCfg,
+    RayCasterCfg,
+    MultiMeshRayCasterCfg,
+    MultiMeshRayCasterCameraCfg,
+    TiledCameraCfg,
+    patterns,
+)
 from isaaclab.sim import SimulationCfg, PhysxCfg
 from isaaclab.envs import ViewerCfg
 from isaaclab.terrains import TerrainImporterCfg
@@ -19,6 +26,7 @@ from isaaclab.terrains.config.rough import ROUGH_TERRAINS_CFG
 
 import basic_locomotion_isaaclab.tasks.custom_events as custom_events
 import basic_locomotion_isaaclab.tasks.custom_curriculums as custom_curriculums
+from basic_locomotion_isaaclab.tasks.locomotion.unitree_l2_lidar import UnitreeL2PatternCfg
 
 @configclass
 class EventCfg:
@@ -491,4 +499,27 @@ class Go2RoughVisionEnvCfg(Go2RoughBlindEnvCfg):
             width=240,
         ),
         debug_vis=True,
+    )
+
+    use_unitree_l2_lidar = True
+    unitree_l2_lidar = MultiMeshRayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        update_period=1 / 5.55,
+        offset=MultiMeshRayCasterCfg.OffsetCfg(pos=(0.31, 0.0, 0.02)),
+        ray_alignment="base",
+        pattern_cfg=UnitreeL2PatternCfg(
+            vertical_fov_orientation="down",
+            enable_downsample=True,
+            keep_ratio=0.1,
+        ),
+        debug_vis=True,
+        mesh_prim_paths=[
+            "/World/ground",
+            #MultiMeshRayCasterCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/base/visuals"),
+            #MultiMeshRayCasterCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FL_.*/visuals"),
+            #MultiMeshRayCasterCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FR_.*/visuals"),
+            #MultiMeshRayCasterCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RL_.*/visuals"),
+            #MultiMeshRayCasterCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RR_.*/visuals"),
+        ],
+        max_distance=2.0,
     )
