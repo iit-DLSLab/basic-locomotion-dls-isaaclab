@@ -67,6 +67,18 @@ parser.add_argument(
     help="Absolute clipping range in meters for LiDAR points expressed in the sensor frame.",
 )
 parser.add_argument(
+    "--lidar_update_hz_min",
+    type=float,
+    default=5.0,
+    help="Minimum simulated LiDAR arrival frequency in Hz for sample-and-hold collection.",
+)
+parser.add_argument(
+    "--lidar_update_hz_max",
+    type=float,
+    default=10.0,
+    help="Maximum simulated LiDAR arrival frequency in Hz for sample-and-hold collection.",
+)
+parser.add_argument(
     "--no_lidar_valid_mask",
     action="store_true",
     default=False,
@@ -89,6 +101,10 @@ AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 if args_cli.video:
     args_cli.enable_cameras = True
+if args_cli.lidar_update_hz_min <= 0.0 or args_cli.lidar_update_hz_max <= 0.0:
+    raise ValueError("--lidar_update_hz_min and --lidar_update_hz_max must be positive.")
+if args_cli.lidar_update_hz_min > args_cli.lidar_update_hz_max:
+    raise ValueError("--lidar_update_hz_min cannot be greater than --lidar_update_hz_max.")
 
 sys.argv = [sys.argv[0]] + hydra_args
 
@@ -197,6 +213,34 @@ def _sanitize_lidar_data(env: RslRlVecEnvWrapper) -> torch.Tensor:
     return torch.cat((points_l, valid.to(points_l.dtype)), dim=-1)
 
 
+class LidarSampleAndHold:
+    """Hold the latest LiDAR frame while the policy/proprioception runs faster."""
+
+    def __init__(self, env: RslRlVecEnvWrapper, update_hz_range: tuple[float, float], step_dt: float):
+        self.env = env
+        self.update_hz_range = update_hz_range
+        self.step_dt = step_dt
+        self.elapsed_s = 0.0
+        self.next_update_period_s = self._sample_update_period()
+        self.current_lidar = _sanitize_lidar_data(env).clone()
+
+    def _sample_update_period(self) -> float:
+        min_hz, max_hz = self.update_hz_range
+        if min_hz == max_hz:
+            return 1.0 / min_hz
+        update_hz = min_hz + (max_hz - min_hz) * torch.rand((), device=self.env.unwrapped.device).item()
+        return 1.0 / update_hz
+
+    def step(self, dones: torch.Tensor | None = None) -> torch.Tensor:
+        self.elapsed_s += self.step_dt
+        force_refresh = bool(dones is not None and dones.any().item())
+        if force_refresh or self.elapsed_s + 1e-9 >= self.next_update_period_s:
+            self.current_lidar = _sanitize_lidar_data(self.env).clone()
+            self.elapsed_s = 0.0
+            self.next_update_period_s = self._sample_update_period()
+        return self.current_lidar
+
+
 def _get_heightmap_grid_shape(env: RslRlVecEnvWrapper, num_rays: int) -> tuple[int, int]:
     pattern_cfg = env.unwrapped.cfg.height_scanner2.pattern_cfg
     heightmap_cols = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1
@@ -254,6 +298,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    if hasattr(env_cfg, "unitree_l2_lidar"):
+        fastest_lidar_period = 1.0 / args_cli.lidar_update_hz_max
+        current_update_period = getattr(env_cfg.unitree_l2_lidar, "update_period", 0.0)
+        if current_update_period > fastest_lidar_period:
+            env_cfg.unitree_l2_lidar.update_period = fastest_lidar_period
 
     log_root_path = os.path.abspath(os.path.join("logs", "rsl_rl", agent_cfg.experiment_name))
     print(f"[INFO] Loading experiment from directory: {log_root_path}")
@@ -299,7 +348,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     policy = runner.get_inference_policy(device=env.unwrapped.device)
 
     obs = env.get_observations()
-    current_lidar = _sanitize_lidar_data(env)
+    step_dt = float(getattr(env.unwrapped, "step_dt", 1.0 / 50.0))
+    lidar_sampler = LidarSampleAndHold(
+        env=env,
+        update_hz_range=(args_cli.lidar_update_hz_min, args_cli.lidar_update_hz_max),
+        step_dt=step_dt,
+    )
+    current_lidar = lidar_sampler.current_lidar
     current_heightmaps, heightmap_size = _get_heightmap_targets(env)
 
     num_envs = current_lidar.shape[0]
@@ -330,6 +385,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         "lidar_frame": "unitree_l2_lidar",
         "lidar_valid_mask_channel": not args_cli.no_lidar_valid_mask,
         "lidar_clip_range": args_cli.lidar_clip_range,
+        "lidar_sample_and_hold": True,
+        "lidar_update_hz_range": (args_cli.lidar_update_hz_min, args_cli.lidar_update_hz_max),
+        "collector_step_dt": step_dt,
+        "collector_inference_hz": 1.0 / step_dt,
         "heightmap_size": heightmap_size,
         "num_envs": num_envs,
     }
@@ -344,7 +403,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             obs, _, dones, _ = env.step(actions)
             dones = dones.bool()
 
-            current_lidar = _sanitize_lidar_data(env)
+            current_lidar = lidar_sampler.step(dones=dones)
             current_heightmaps, _ = _get_heightmap_targets(env)
             current_robot_info = obs["common"].clone()
 

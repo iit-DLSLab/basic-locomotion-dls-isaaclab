@@ -29,6 +29,17 @@ python scripts/lidar_to_heightmap/collect_lidar_to_heightmap.py \
   --headless
 ```
 
+The collector runs one policy/environment step per sample, typically 50 Hz for this task, but simulates a slower LiDAR stream with sample-and-hold. By default, the LiDAR frame is refreshed at a random frequency between 5 Hz and 10 Hz, while proprioception and policy inputs stay at the latest 50 Hz values:
+
+```bash
+python scripts/lidar_to_heightmap/collect_lidar_to_heightmap.py \
+  --task=Locomotion-Go2-Rough-Vision \
+  --num_envs=8192 \
+  --lidar_update_hz_min=5.0 \
+  --lidar_update_hz_max=10.0 \
+  --headless
+```
+
 3. Train one of the contained LiDAR networks.
 
 ```bash
