@@ -285,12 +285,12 @@ class LocomotionEnv(DirectRLEnv):
             [
                 tensor
                 for tensor in (
-                    base_linear * self.cfg.observation_base_linear_scale,
-                    base_ang_vel * self.cfg.observation_base_ang_vel_scale,
+                    base_linear,
+                    base_ang_vel,
                     projected_gravity_b,
                     self._commands,
                     self._robot.data.joint_pos[:, self._ids_joints_order] - self._robot.data.default_joint_pos[:, self._ids_joints_order],
-                    self._robot.data.joint_vel[:, self._ids_joints_order] * self.cfg.observation_joint_vel_scale,
+                    self._robot.data.joint_vel[:, self._ids_joints_order],
                     self._actions,
                     clock_data,
                 )

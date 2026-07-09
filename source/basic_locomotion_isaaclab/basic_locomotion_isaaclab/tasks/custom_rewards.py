@@ -570,8 +570,6 @@ def periodic_contact_suggestion(self) -> torch.Tensor:
         > 1.0
     )
     should_move = torch.norm(self._commands[:, :3], dim=1) > 0.01
-    self._phase_signal += self.step_dt * self._step_freq
-    self._phase_signal = self._phase_signal % 1.0
     contact_periodic_on = self._phase_signal < self._duty_factor
     periodic_contact_suggestion = (
         torch.sum(contact_periodic_on * contacts_foot, dim=1) + torch.sum(~contact_periodic_on * ~contacts_foot, dim=1)
