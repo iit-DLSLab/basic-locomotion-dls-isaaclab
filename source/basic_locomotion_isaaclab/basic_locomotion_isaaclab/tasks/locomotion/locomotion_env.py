@@ -16,7 +16,21 @@ from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensor, ContactSensorCfg, RayCaster, RayCasterCfg, RayCasterCamera, RayCasterCameraCfg, MultiMeshRayCasterCamera, MultiMeshRayCasterCameraCfg, TiledCameraCfg, TiledCamera, patterns, Imu
+from isaaclab.sensors import (
+    ContactSensor,
+    ContactSensorCfg,
+    Imu,
+    MultiMeshRayCaster,
+    MultiMeshRayCasterCamera,
+    MultiMeshRayCasterCameraCfg,
+    RayCaster,
+    RayCasterCamera,
+    RayCasterCameraCfg,
+    RayCasterCfg,
+    TiledCamera,
+    TiledCameraCfg,
+    patterns,
+)
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
@@ -187,6 +201,11 @@ class LocomotionEnv(DirectRLEnv):
             self.scene.sensors["depth_camera"] = self._depth_camera
             pass
 
+        # we add the Unitree L2 LiDAR if needed for vision-based locomotion
+        if(getattr(self.cfg, "use_unitree_l2_lidar", False)):
+            self._unitree_l2_lidar = MultiMeshRayCaster(self.cfg.unitree_l2_lidar)
+            self.scene.sensors["unitree_l2_lidar"] = self._unitree_l2_lidar
+
         # we add an imu
         self._imu = Imu(self.cfg.imu)
         self.scene.sensors["imu"] = self._imu
@@ -266,12 +285,12 @@ class LocomotionEnv(DirectRLEnv):
             [
                 tensor
                 for tensor in (
-                    base_linear * self.cfg.observation_base_linear_scale,
-                    base_ang_vel * self.cfg.observation_base_ang_vel_scale,
+                    base_linear,
+                    base_ang_vel,
                     projected_gravity_b,
                     self._commands,
                     self._robot.data.joint_pos[:, self._ids_joints_order] - self._robot.data.default_joint_pos[:, self._ids_joints_order],
-                    self._robot.data.joint_vel[:, self._ids_joints_order] * self.cfg.observation_joint_vel_scale,
+                    self._robot.data.joint_vel[:, self._ids_joints_order],
                     self._actions,
                     clock_data,
                 )

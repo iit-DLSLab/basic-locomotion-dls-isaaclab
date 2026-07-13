@@ -15,8 +15,8 @@ class CustomDataset(Dataset):
     def add_sample(self, input_data, label):
         # There is a problem! we append (num_envs, features) as one element inside the list, not N!
 
-        # Save only random 128 element from the input_data and label
-        random_idx = random.sample(range(input_data.size(0)), min(128, input_data.size(0)))
+        # Save only random 16 element from the input_data and label
+        random_idx = random.sample(range(input_data.size(0)), min(16, input_data.size(0)))
         input_data_cpu = input_data[random_idx].clone().detach().cpu()
         label_cpu = label[random_idx].clone().detach().cpu()
 
@@ -49,7 +49,7 @@ class SupervisedNetworkBase(torch.nn.Module):
         self.output_features = out_features
         self.dataset = CustomDataset(max_size=dataset_max_size)
 
-    def train_network(self, batch_size=512, epochs=1000, learning_rate=1e-3, device='cpu', validation_split=0.2):
+    def train_network(self, batch_size=256, epochs=1000, learning_rate=1e-3, device='cpu', validation_split=0.2):
         """Train the network with validation loss tracking.
         
         Args:
@@ -118,31 +118,35 @@ class SupervisedNetworkBase(torch.nn.Module):
                         train_batches += 1
                     
                     avg_train_loss = train_loss / train_batches if train_batches > 0 else 0.0
-            
-            # Validation phase
-            self.eval()
-            val_loss = 0.0
-            val_batches = 0
-            
-            with torch.no_grad():
-                for inputs, targets in val_loader:
-                    inputs = inputs.reshape(-1, inputs.size(-1)).clone().to(device)
-                    targets = targets.reshape(-1, targets.size(-1)).clone().to(device)
-                    predictions = self(inputs)
-                    
-                    loss = loss_fn(predictions, targets)
-                    val_loss += loss.item()
-                    val_batches += 1
-            
-            avg_val_loss = val_loss / val_batches if val_batches > 0 else 0.0
-            
-            # Track best validation loss
-            if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-            
-            # Print progress
+
+            # Print progress training loss
             if (epoch + 1) % 10 == 0 or epoch == 0:
-                print(f"Epoch {epoch + 1}/{epochs} - Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}")
+                print(f"Epoch {epoch + 1}/{epochs} - Train Loss: {avg_train_loss:.6f}")
+
+            if(epoch % 100 == 0):
+                # Validation phase
+                self.eval()
+                val_loss = 0.0
+                val_batches = 0
+                
+                with torch.no_grad():
+                    for inputs, targets in val_loader:
+                        inputs = inputs.reshape(-1, inputs.size(-1)).clone().to(device)
+                        targets = targets.reshape(-1, targets.size(-1)).clone().to(device)
+                        predictions = self(inputs)
+                        
+                        loss = loss_fn(predictions, targets)
+                        val_loss += loss.item()
+                        val_batches += 1
+                
+                avg_val_loss = val_loss / val_batches if val_batches > 0 else 0.0
+                
+                # Track best validation loss
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+            
+                # Print progress validation loss
+                print(f"Epoch {epoch + 1}/{epochs} - Val Loss: {avg_val_loss:.6f}")
         
         self.eval()
         print(f"Training complete. Best validation loss: {best_val_loss:.6f}")

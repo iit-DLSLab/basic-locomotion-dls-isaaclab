@@ -137,12 +137,6 @@ class B2FlatEnvCfg(DirectRLEnvCfg):
     else:
         history_length = 1
 
-
-    observation_base_linear_scale = 1.0
-    observation_base_ang_vel_scale = 1.0
-    observation_joint_vel_scale = 0.1
-
-
     use_imu = False
 
     use_concurrent_state_est = True

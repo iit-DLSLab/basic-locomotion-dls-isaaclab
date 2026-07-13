@@ -6,7 +6,14 @@ from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, MultiMeshRayCasterCameraCfg, TiledCameraCfg, patterns
+from isaaclab.sensors import (
+    ContactSensorCfg,
+    RayCasterCfg,
+    MultiMeshRayCasterCfg,
+    MultiMeshRayCasterCameraCfg,
+    TiledCameraCfg,
+    patterns,
+)
 from isaaclab.sim import SimulationCfg, PhysxCfg
 from isaaclab.envs import ViewerCfg
 from isaaclab.terrains import TerrainImporterCfg
@@ -19,6 +26,7 @@ from isaaclab.terrains.config.rough import ROUGH_TERRAINS_CFG
 
 import basic_locomotion_isaaclab.tasks.custom_events as custom_events
 import basic_locomotion_isaaclab.tasks.custom_curriculums as custom_curriculums
+from basic_locomotion_isaaclab.tasks.locomotion.unitree_l2_lidar import UnitreeL2PatternCfg
 
 @configclass
 class EventCfg:
@@ -125,7 +133,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     observation_space += 12 # joint velocities
     observation_space += 12 # last actions
 
-    use_clock_signal = True
+    use_clock_signal = False
     if(use_clock_signal):
         observation_space += 4 # clock signal for periodic gait
 
@@ -138,11 +146,6 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
         observation_space *= history_length
     else:
         history_length = 1
-
-
-    observation_base_linear_scale = 1.0
-    observation_base_ang_vel_scale = 1.0
-    observation_joint_vel_scale = 0.1
 
 
     use_imu = False
@@ -336,16 +339,16 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
 
 
     # Feet reward scale
-    feet_air_time_reward_scale = 0.5 * 0.0
-    feet_air_time_variance_reward_scale = -1.0 * 0.0
+    feet_air_time_reward_scale = 0.25
+    feet_air_time_variance_reward_scale = -1.0
 
     feet_height_clearance_aperiodic_reward_scale = 0.25 * 0.0  
     feet_height_clearance_periodic_reward_scale = 0.25 * 0.0
     
-    feet_height_clearance_mujoco_aperiodic_reward_scale = 0.25 * 0.0
-    feet_height_clearance_mujoco_periodic_reward_scale = 0.25# * 0.0
+    feet_height_clearance_mujoco_aperiodic_reward_scale = 0.25
+    feet_height_clearance_mujoco_periodic_reward_scale = 0.25 * 0.0
     
-    feet_slide_reward_scale = -0.25 * 0.0
+    feet_slide_reward_scale = -0.25
     
     feet_to_hip_distance_reward_scale = 1.5
     # This is used in loocmotion_env.py for the above reward
@@ -361,13 +364,13 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
 
 
     # Contact suggestion reward scale
-    periodic_contact_suggestion_reward_scale =  0.5
+    periodic_contact_suggestion_reward_scale =  0.5 * 0.0
     # Desired step freq and duty factor (if periodic gait contact suggestion is used)
     desired_step_freq = 1.4
     desired_duty_factor = 0.65
     desired_phase_offset = [0.0, 0.5, 0.5, 0.0] #FL, FR, RL, RR
 
-    stance_contact_suggestion_reward_scale = 0.25
+    stance_contact_suggestion_reward_scale = 1.0
 
 
 
@@ -491,4 +494,27 @@ class Go2RoughVisionEnvCfg(Go2RoughBlindEnvCfg):
             width=240,
         ),
         debug_vis=True,
+    )
+
+    use_unitree_l2_lidar = True
+    unitree_l2_lidar = MultiMeshRayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        update_period=1 / 5.55,
+        offset=MultiMeshRayCasterCfg.OffsetCfg(pos=(0.31, 0.0, 0.02)),
+        ray_alignment="base",
+        pattern_cfg=UnitreeL2PatternCfg(
+            vertical_fov_orientation="down",
+            enable_downsample=True,
+            keep_ratio=0.1,
+        ),
+        debug_vis=True,
+        mesh_prim_paths=[
+            "/World/ground",
+            #MultiMeshRayCasterCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/base/visuals"),
+            #MultiMeshRayCasterCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FL_.*/visuals"),
+            #MultiMeshRayCasterCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/FR_.*/visuals"),
+            #MultiMeshRayCasterCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RL_.*/visuals"),
+            #MultiMeshRayCasterCfg.RaycastTargetCfg(prim_expr="/World/envs/env_.*/Robot/RR_.*/visuals"),
+        ],
+        max_distance=2.0,
     )

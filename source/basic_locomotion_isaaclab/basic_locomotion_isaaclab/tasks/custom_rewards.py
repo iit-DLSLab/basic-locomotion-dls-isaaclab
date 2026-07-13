@@ -55,7 +55,7 @@ def track_height_exp(self) -> torch.Tensor:
 
 def track_lin_vel_xy_exp(self) -> torch.Tensor:
     lin_vel_error = torch.sum(torch.square(self._commands[:, :2] - self._robot.data.root_lin_vel_b[:, :2]), dim=1)
-    lin_vel_error_mapped = torch.exp(-lin_vel_error / 0.25)
+    lin_vel_error_mapped = torch.exp(-lin_vel_error / 0.1)
     return lin_vel_error_mapped
 
 
@@ -107,7 +107,7 @@ def track_ang_vel_xy_l2(self) -> torch.Tensor:
 
 def track_ang_vel_z_exp(self) -> torch.Tensor:
     yaw_rate_error = torch.square(self._commands[:, 2] - self._robot.data.root_ang_vel_b[:, 2])
-    yaw_rate_error_mapped = torch.exp(-yaw_rate_error / 0.25)
+    yaw_rate_error_mapped = torch.exp(-yaw_rate_error / 0.1)
     return yaw_rate_error_mapped
 
 
@@ -178,17 +178,54 @@ def joints_energy_l1(self) -> torch.Tensor:
 
 
 def feet_air_time(self) -> torch.Tensor:
-    mode_time = 0.5
-    current_air_time = self._contact_sensor.data.current_air_time[:, self._feet_contact_sensor_ids]
-    current_contact_time = self._contact_sensor.data.current_contact_time[:, self._feet_contact_sensor_ids]
-    t_max = torch.max(current_air_time, current_contact_time)
-    t_min = torch.clip(t_max, max=mode_time)
-    feet_air_time_per_leg = torch.where(t_max < mode_time, t_min, torch.zeros_like(t_min))
-    feet_air_time_per_leg -= torch.where(
-        current_air_time > mode_time, current_air_time - mode_time, torch.zeros_like(current_air_time)
+    desired_contact_time = 0.47
+    desired_air_time = 0.25
+
+    current_air_time = self._contact_sensor.data.current_air_time[
+        :, self._feet_contact_sensor_ids
+    ]
+    current_contact_time = self._contact_sensor.data.current_contact_time[
+        :, self._feet_contact_sensor_ids
+    ]
+
+    in_contact = current_contact_time > 0.0
+
+    current_time = torch.where(
+        in_contact,
+        current_contact_time,
+        current_air_time,
     )
-    feet_air_time = torch.sum(feet_air_time_per_leg, dim=1) * (torch.norm(self._commands[:, :3], dim=1) > 0.1)
-    return feet_air_time
+
+    desired_time = torch.where(
+        in_contact,
+        torch.full_like(current_time, desired_contact_time),
+        torch.full_like(current_time, desired_air_time),
+    )
+
+    # From 0 to 1 until reach the target
+    bounded_reward = torch.clamp(
+        current_time / desired_time,
+        max=1.0,
+    )
+
+    # After reaching the target, apply a penalty for exceeding the desired time
+    excess_penalty = torch.clamp(
+        (current_time - desired_time) / desired_time,
+        min=0.0,
+    )
+
+    feet_reward_per_leg = bounded_reward - excess_penalty
+
+    # Limite inferiore opzionale per evitare penalità enormi.
+    feet_reward_per_leg = torch.clamp(
+        feet_reward_per_leg,
+        min=-1.0,
+        max=1.0,
+    )
+
+    should_move = torch.norm(self._commands[:, :3], dim=1) > 0.01
+
+    return torch.sum(feet_reward_per_leg, dim=1) * should_move
 
 
 def feet_air_time_variance(self):
@@ -570,8 +607,6 @@ def periodic_contact_suggestion(self) -> torch.Tensor:
         > 1.0
     )
     should_move = torch.norm(self._commands[:, :3], dim=1) > 0.01
-    self._phase_signal += self.step_dt * self._step_freq
-    self._phase_signal = self._phase_signal % 1.0
     contact_periodic_on = self._phase_signal < self._duty_factor
     periodic_contact_suggestion = (
         torch.sum(contact_periodic_on * contacts_foot, dim=1) + torch.sum(~contact_periodic_on * ~contacts_foot, dim=1)
