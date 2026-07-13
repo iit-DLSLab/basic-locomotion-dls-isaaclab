@@ -1,4 +1,14 @@
 import os
+
+# Fail-safe: se non è stato scelto esplicitamente altro,
+# ROS 2 comunica solamente sulla macchina locale.
+os.environ.setdefault("ROS_LOCALHOST_ONLY", "1")
+
+print(
+    "ROS 2 network mode:",
+    "LOCALHOST" if os.environ["ROS_LOCALHOST_ONLY"] == "1" else "NETWORK",
+)
+
 import sys
 import shlex
 import subprocess
