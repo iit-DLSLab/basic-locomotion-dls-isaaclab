@@ -36,10 +36,11 @@ obs_space_names_actor = [
         "base_lin_vel",
         "base_ang_vel",
         "gravity",
-        "ctrl_commands",
-        "qpos_js",
-        "qvel_js",
-        "actions",
+        "des_base_lin_vel_xy",
+        "des_base_ang_vel_yaw",
+        "joints_pos",
+        "joints_vel",
+        "joints_pos",
         "clock_data",
     ]*int(history_length)
 obs_space_names_actor += ["heightmap:7x9"]
@@ -50,18 +51,19 @@ obs_space_names_critic = [
         "base_lin_vel",
         "base_ang_vel",
         "gravity",
-        "ctrl_commands",
-        "qpos_js",
-        "qvel_js",
-        "actions",
+        "des_base_lin_vel_xy",
+        "des_base_ang_vel_yaw",
+        "joints_pos",
+        "joints_vel",
+        "joints_pos",
         "clock_data",
     ]*int(history_length)
 obs_space_names_critic += ["heightmap:7x9"]
-obs_space_names_critic += ["position_gains", "velocity_gains", "base_lin_vel", "base_pos_z", "base_pos_z", "clock_data"]
+obs_space_names_critic += ["joints_pos", "joints_pos", "base_lin_vel", "invariant_scalar", "invariant_scalar", "clock_data"]
 
 
 # Action Space
-action_space_names = ["actions"]
+action_space_names = ["joints_pos"]
 
 
 # Joints Order
