@@ -496,7 +496,7 @@ class Go2RoughVisionEnvCfg(Go2RoughBlindEnvCfg):
         debug_vis=True,
     )
 
-    use_unitree_l2_lidar = True
+    use_unitree_l2_lidar = False
     unitree_l2_lidar = MultiMeshRayCasterCfg(
         prim_path="/World/envs/env_.*/Robot/base",
         update_period=1 / 5.55,

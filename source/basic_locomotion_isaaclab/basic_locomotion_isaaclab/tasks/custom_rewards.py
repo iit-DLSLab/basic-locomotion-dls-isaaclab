@@ -570,17 +570,9 @@ def _debug_vis_callback(self, event):
     if self._edge_map_visualizer is None or not self._edge_map_visualizer.is_visible() or not _has_edge_map(self):
         return
 
-    env_ids_cfg = getattr(self.cfg, "edge_map_visualization_env_ids", [0])
-    if isinstance(env_ids_cfg, int):
-        env_ids_cfg = [env_ids_cfg]
-    env_ids = torch.tensor(env_ids_cfg, dtype=torch.long, device=self.device)
-    env_ids = env_ids[(env_ids >= 0) & (env_ids < self.num_envs)]
-    if env_ids.numel() == 0:
-        return
-
     edge_map, _, _, _ = _compute_edge_map(self)
-    translations = self._height_scanner3.data.ray_hits_w[env_ids].reshape(-1, 3).clone()
-    marker_indices = edge_map[env_ids].reshape(-1).long()
+    translations = self._height_scanner3.data.ray_hits_w.reshape(-1, 3).clone()
+    marker_indices = edge_map.reshape(-1).long()
 
     valid_hits = torch.isfinite(translations).all(dim=1)
     if not torch.any(valid_hits):
