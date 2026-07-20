@@ -1,4 +1,16 @@
 
+## Installation Deploy using Pixi
+
+1. install [pixi](https://pixi.sh/latest/)
+
+2. create the environment from `deploy/pixi.toml`:
+
+```bash
+cd deploy
+pixi install
+pixi shell
+```
+
 
 ## Installation Deploy using Conda
 
@@ -8,27 +20,10 @@
 
 
 ```bash
-conda env create -f mamba_environment_ros2.yaml
-conda activate basic_locomotion_isaaclab_ros2_env
+conda env create -f mamba_environment.yaml
+conda activate basic_locomotion_isaaclab_env
 ```
 
-## Installation Deploy using Docker
-
-1. install docker and run
-
-```bash
-docker build -t basic_locomotion_isaaclab_image .
-```
-
-2. put in your .bashrc the following alias
-```bash
-alias basic_locomotion_isaaclab_docker='
-if [ ! "$(docker ps -a -q -f name=basic_locomotion_isaaclab_container)" ]; then
-   xhost + && docker run -it --rm -v absolute_path_to_this_repo:/home/ -v /tmp/.X11-unix:/tmp/.X11-unix --device=/dev/input/ -e DISPLAY=$DISPLAY -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY -e QT_X11_NO_MITSHM=1 --gpus all --net host --cap-add=sys_nice --name basic_locomotion_isaaclab_container basic_locomotion_isaaclab_image; \
-else
-   docker exec -it basic_locomotion_isaaclab_container bash; \
-fi'
-```
 
 
 ## Run Sim-to-Sim 
