@@ -1,17 +1,3 @@
-
-## Installation Deploy using Pixi
-
-1. install [pixi](https://pixi.sh/latest/)
-
-2. create the environment from `deploy/pixi.toml`:
-
-```bash
-cd deploy
-pixi install
-pixi shell
-```
-
-
 ## Installation Deploy using Conda
 
 1. install [miniforge](https://github.com/conda-forge/miniforge/releases) (x86_64 or arm64 depending on your platform)
