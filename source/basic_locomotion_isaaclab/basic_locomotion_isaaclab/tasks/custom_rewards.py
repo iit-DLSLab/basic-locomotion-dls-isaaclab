@@ -209,10 +209,25 @@ def feet_air_time(self) -> torch.Tensor:
     )
 
     # After reaching the target, apply a penalty for exceeding the desired time
-    excess_penalty = torch.clamp(
+    #excess_penalty = torch.clamp(
+    #    (current_time - desired_time) / desired_time,
+    #    min=0.0,
+    #)
+
+    # Normalized excess time: 0 at target, 1 at twice the target time
+    excess_ratio = torch.clamp(
         (current_time - desired_time) / desired_time,
         min=0.0,
     )
+
+    # Increasingly steep penalty
+    alpha = 1.0  # penalty magnitude
+    beta = 2.0   # steepness
+
+    excess_penalty = alpha * torch.expm1(
+        torch.clamp(beta * excess_ratio, max=20.0)
+    )
+
 
     feet_reward_per_leg = bounded_reward - excess_penalty
 
