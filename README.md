@@ -40,7 +40,7 @@ A list of robots and environments available is described below:
 
 ## Installation and Runs
 
-If you want only to deploy a trained policy on your robot, continue on [README_DEPLOY](./README_deploy.md) otherwise on [README_TRAIN](./README_train.md).
+If you want only to deploy a trained policy on your robot, continue on [README_deploy](./README_deploy.md) otherwise on [README_train](./README_train.md).
 
 **For the train, check first the compatibility with IsaacLab and rsl-rl at the top of this readme. They indicate the releases that we tested.**
 
