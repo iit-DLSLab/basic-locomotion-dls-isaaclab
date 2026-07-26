@@ -253,7 +253,7 @@ class LidarSampleAndHold:
 
 
 def _get_heightmap_targets(env: RslRlVecEnvWrapper, heightmap_size: tuple[int, int]) -> torch.Tensor:
-    scanner = env.unwrapped._height_scanner2
+    scanner = env.unwrapped._perceptive_height_scanner
     sensor_pos_w = _as_torch(scanner.data.pos_w)
     ray_hits_w = _as_torch(scanner.data.ray_hits_w)
     height_data = sensor_pos_w[:, 2].unsqueeze(1) - ray_hits_w[..., 2] - 0.5
@@ -309,7 +309,7 @@ def _update_markers(
     prediction_markers: VisualizationMarkers,
     target_markers: VisualizationMarkers | None,
 ) -> tuple[float, float, float]:
-    scanner = env.unwrapped._height_scanner2
+    scanner = env.unwrapped._perceptive_height_scanner
     sensor_pos_w = _as_torch(scanner.data.pos_w)
     ray_hits_w = _as_torch(scanner.data.ray_hits_w)
 
@@ -435,8 +435,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             1.0 / lidar_update_hz_max,
         )
         env_cfg.unitree_l2_lidar.debug_vis = args_cli.show_lidar_rays
-    if hasattr(env_cfg, "height_scanner2"):
-        env_cfg.height_scanner2.debug_vis = False
+    if hasattr(env_cfg, "perceptive_height_scanner"):
+        env_cfg.perceptive_height_scanner.debug_vis = False
 
     policy_checkpoint = _resolve_policy_checkpoint(agent_cfg, train_task_name, model_metadata)
     env_cfg.log_dir = os.path.dirname(policy_checkpoint)
