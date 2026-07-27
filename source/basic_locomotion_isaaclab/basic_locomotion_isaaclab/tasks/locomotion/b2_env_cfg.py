@@ -241,14 +241,24 @@ class B2FlatEnvCfg(DirectRLEnvCfg):
         debug_vis=False,
     )
 
-    # we add a height scanner for perceptive locomotion
-    height_scanner = RayCasterCfg(
+    # Base-centered height scanner for pose-related rewards and privileged observations.
+    pose_height_scanner = RayCasterCfg(
         prim_path="/World/envs/env_.*/Robot/base",
         offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
         #attach_yaw_only=True,
         ray_alignment='yaw',
         #pattern_cfg=patterns.GridPatternCfg(resolution=0.2, size=[1.4, 1.0]),
         pattern_cfg=patterns.GridPatternCfg(resolution=0.2, size=[0.6, 0.6]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+    # Template copied onto each foot link to measure the terrain immediately around that foot.
+    foot_height_scanner = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/FL_foot",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.5)),
+        ray_alignment="yaw",
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.1, 0.1]),
         debug_vis=False,
         mesh_prim_paths=["/World/ground"],
     )
@@ -291,6 +301,7 @@ class B2FlatEnvCfg(DirectRLEnvCfg):
 
     # Desired clip actions
     desired_clip_actions = 3.0
+    use_filter_actions = True
 
     
     # Tracking reward scale
@@ -424,8 +435,9 @@ class B2RoughBlindEnvCfg(B2FlatEnvCfg):
 class B2RoughVisionEnvCfg(B2RoughBlindEnvCfg):
  
     def __post_init__(self) -> None:
-        height_map_x_points = int(round(self.height_scanner2.pattern_cfg.size[0] / self.height_scanner2.pattern_cfg.resolution)) + 1
-        height_map_y_points = int(round(self.height_scanner2.pattern_cfg.size[1] / self.height_scanner2.pattern_cfg.resolution)) + 1
+        pattern_cfg = self.perceptive_height_scanner.pattern_cfg
+        height_map_x_points = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1
+        height_map_y_points = int(round(pattern_cfg.size[1] / pattern_cfg.resolution)) + 1
         self.observation_space = self.observation_space + height_map_x_points * height_map_y_points
 
         self.feet_edge_reward_scale = -1.0
@@ -433,7 +445,7 @@ class B2RoughVisionEnvCfg(B2RoughBlindEnvCfg):
     use_vision = True
 
     # we add a height scanner for perceptive locomotion
-    height_scanner2 = RayCasterCfg(
+    perceptive_height_scanner = RayCasterCfg(
         prim_path="/World/envs/env_.*/Robot/base",
         offset=RayCasterCfg.OffsetCfg(pos=(0.4, 0.0, 0.0)),
         ray_alignment='yaw',
@@ -443,7 +455,7 @@ class B2RoughVisionEnvCfg(B2RoughBlindEnvCfg):
     )
 
     # we add a height scanner for feet edge reward
-    height_scanner3 = RayCasterCfg(
+    edge_height_scanner = RayCasterCfg(
         prim_path="/World/envs/env_.*/Robot/base",
         offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
         ray_alignment='yaw',

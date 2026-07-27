@@ -242,7 +242,7 @@ class LidarSampleAndHold:
 
 
 def _get_heightmap_grid_shape(env: RslRlVecEnvWrapper, num_rays: int) -> tuple[int, int]:
-    pattern_cfg = env.unwrapped.cfg.height_scanner2.pattern_cfg
+    pattern_cfg = env.unwrapped.cfg.perceptive_height_scanner.pattern_cfg
     heightmap_cols = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1
     if num_rays % heightmap_cols != 0:
         heightmap_rows = int(round(pattern_cfg.size[1] / pattern_cfg.resolution)) + 1
@@ -259,8 +259,8 @@ def _get_heightmap_grid_shape(env: RslRlVecEnvWrapper, num_rays: int) -> tuple[i
 
 def _get_heightmap_targets(env: RslRlVecEnvWrapper) -> tuple[torch.Tensor, tuple[int, int]]:
     height_data = (
-        env.unwrapped._height_scanner2.data.pos_w[:, 2].unsqueeze(1)
-        - env.unwrapped._height_scanner2.data.ray_hits_w[..., 2]
+        env.unwrapped._perceptive_height_scanner.data.pos_w[:, 2].unsqueeze(1)
+        - env.unwrapped._perceptive_height_scanner.data.ray_hits_w[..., 2]
         - 0.5
     )
     height_data = torch.nan_to_num(height_data, nan=0.0, posinf=1.0, neginf=-1.0)

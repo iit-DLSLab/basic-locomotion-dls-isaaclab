@@ -140,16 +140,16 @@ def _get_privileged_observation(self):
     default_damping = asset.data.default_joint_damping[0][0]
 
     # height error
-    height_data_scanner = self._height_scanner.data.ray_hits_w[..., 2]
+    height_data_scanner = self._pose_height_scanner.data.ray_hits_w[..., 2]
     height_data_scanner = torch.nan_to_num(height_data_scanner, nan=0.0, posinf=1.0, neginf=-1.0)
     height_data_scanner = torch.clip(height_data_scanner, min=-5, max=5) # Handle inf values
     mean_height_ray = torch.mean(height_data_scanner, dim=1)
     height_error = torch.abs(self.cfg.desired_base_height + mean_height_ray - self._robot.data.root_state_w[:, 2])
 
     # terrain orientation
-    height_map_resolution = self._height_scanner.cfg.pattern_cfg.resolution
-    height_map_x_points = int(round(self._height_scanner.cfg.pattern_cfg.size[0] / height_map_resolution)) + 1
-    height_map_y_points = int(round(self._height_scanner.cfg.pattern_cfg.size[1] / height_map_resolution))
+    height_map_resolution = self._pose_height_scanner.cfg.pattern_cfg.resolution
+    height_map_x_points = int(round(self._pose_height_scanner.cfg.pattern_cfg.size[0] / height_map_resolution)) + 1
+    height_map_y_points = int(round(self._pose_height_scanner.cfg.pattern_cfg.size[1] / height_map_resolution))
     distance_between_front_and_back = (height_map_x_points/2)* height_map_resolution
 
     cols_back = torch.arange(0, height_data_scanner.shape[1], height_map_x_points).unsqueeze(1) + torch.arange(int(height_map_x_points/2))
@@ -167,6 +167,7 @@ def _get_privileged_observation(self):
     terrain_pitch = -torch.atan2(delta_z, delta_s)
 
     contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_contact_sensor_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
+  
 
     obs_privileged = torch.cat((
                         hip_stiffness/default_stiffness, thigh_stiffness/default_stiffness, calf_stiffness/default_stiffness, #P gain
@@ -177,4 +178,14 @@ def _get_privileged_observation(self):
                         contacts_foot,
                         )
                     , dim=-1)
+
+    """height_data = (
+        self._pose_height_scanner.data.pos_w[:, 2].unsqueeze(1)
+        - self._pose_height_scanner.data.ray_hits_w[..., 2]
+        - 0.5
+    )
+    height_data = torch.nan_to_num(height_data, nan=0.0, posinf=1.0, neginf=-1.0)
+    height_data = height_data.clip(-1.0, 1.0)
+    obs_privileged = torch.cat((obs_privileged, height_data), dim=-1)"""
+
     return obs_privileged

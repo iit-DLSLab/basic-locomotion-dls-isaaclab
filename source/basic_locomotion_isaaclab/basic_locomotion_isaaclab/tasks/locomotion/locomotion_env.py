@@ -182,17 +182,30 @@ class LocomotionEnv(DirectRLEnv):
         self._contact_sensor = ContactSensor(self.cfg.contact_sensor)
         self.scene.sensors["contact_sensor"] = self._contact_sensor
 
-        # we add a first height scanner for rewards like orientation and feet height
-        self._height_scanner = RayCaster(self.cfg.height_scanner)
-        self.scene.sensors["height_scanner"] = self._height_scanner
+        # Keep the base-centered scanner for base-height and terrain-orientation terms.
+        self._pose_height_scanner = RayCaster(self.cfg.pose_height_scanner)
+        self.scene.sensors["pose_height_scanner"] = self._pose_height_scanner
 
-        # we add a second height scanner for the vision-based locomotion
+        # Use one small height map centered on each foot for the clearance rewards.
+        self._foot_height_scanners = []
+        for foot_name in ("FL_foot", "FR_foot", "RL_foot", "RR_foot"):
+            scanner_cfg = self.cfg.foot_height_scanner.replace(
+                prim_path=f"/World/envs/env_.*/Robot/{foot_name}",
+                visualizer_cfg=self.cfg.foot_height_scanner.visualizer_cfg.replace(
+                    prim_path=f"/Visuals/{foot_name}HeightScanner"
+                ),
+            )
+            scanner = RayCaster(scanner_cfg)
+            self.scene.sensors[f"{foot_name.lower()}_height_scanner"] = scanner
+            self._foot_height_scanners.append(scanner)
+
+        # Add the perceptive and edge scanners only for vision-based locomotion.
         if(getattr(self.cfg, "use_vision", False)):
-            self._height_scanner2 = RayCaster(self.cfg.height_scanner2)
-            self.scene.sensors["height_scanner2"] = self._height_scanner2
+            self._perceptive_height_scanner = RayCaster(self.cfg.perceptive_height_scanner)
+            self.scene.sensors["perceptive_height_scanner"] = self._perceptive_height_scanner
 
-            self._height_scanner3 = RayCaster(self.cfg.height_scanner3)
-            self.scene.sensors["height_scanner3"] = self._height_scanner3
+            self._edge_height_scanner = RayCaster(self.cfg.edge_height_scanner)
+            self.scene.sensors["edge_height_scanner"] = self._edge_height_scanner
 
         # we add a depth camera if needed for vision-based locomotion
         if(getattr(self.cfg, "use_depth_camera", False)):
@@ -310,7 +323,9 @@ class LocomotionEnv(DirectRLEnv):
         # Add heightmap data to obs if needed
         if(getattr(self.cfg, "use_vision", False)):
             height_data = (
-                self._height_scanner2.data.pos_w[:, 2].unsqueeze(1) - self._height_scanner2.data.ray_hits_w[..., 2] - 0.5
+                self._perceptive_height_scanner.data.pos_w[:, 2].unsqueeze(1)
+                - self._perceptive_height_scanner.data.ray_hits_w[..., 2]
+                - 0.5
             )
             height_data = torch.nan_to_num(height_data, nan=0.0, posinf=1.0, neginf=-1.0)
             height_data = height_data.clip(-1.0, 1.0)

@@ -54,10 +54,20 @@ if __name__ == '__main__':
     locomotion_policy = LocomotionPolicyWrapper(env=env)
 
     if(locomotion_policy.use_vision):
-        resolution_heightmap = config.training_env["height_scanner2"]["pattern_cfg"]["resolution"]
-        num_rows_heightmap = round(config.training_env["height_scanner2"]["pattern_cfg"]["size"][0]/resolution_heightmap) + 1
-        num_cols_heightmap = round(config.training_env["height_scanner2"]["pattern_cfg"]["size"][1]/resolution_heightmap) + 1
-        heightmap_offset = config.training_env["height_scanner2"]["offset"]
+        resolution_heightmap = config.training_env["perceptive_height_scanner"]["pattern_cfg"]["resolution"]
+        num_rows_heightmap = (
+            round(
+                config.training_env["perceptive_height_scanner"]["pattern_cfg"]["size"][0] / resolution_heightmap
+            )
+            + 1
+        )
+        num_cols_heightmap = (
+            round(
+                config.training_env["perceptive_height_scanner"]["pattern_cfg"]["size"][1] / resolution_heightmap
+            )
+            + 1
+        )
+        heightmap_offset = config.training_env["perceptive_height_scanner"]["offset"]
         heightmap = HeightMap(num_rows=num_rows_heightmap, num_cols=num_cols_heightmap, dist_x=resolution_heightmap, dist_y=resolution_heightmap, mj_model=env.mjModel, mj_data=env.mjData)     
     
 
@@ -180,4 +190,3 @@ if __name__ == '__main__':
                 
 
     env.close()
-
