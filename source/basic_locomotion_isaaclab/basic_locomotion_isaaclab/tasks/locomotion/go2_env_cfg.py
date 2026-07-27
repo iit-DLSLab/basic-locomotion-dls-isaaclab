@@ -389,6 +389,14 @@ from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 @configclass
 class Go2RoughBlindEnvCfg(Go2FlatEnvCfg):
 
+    """def __post_init__(self) -> None:
+        pattern_cfg = self.pose_height_scanner.pattern_cfg
+        height_map_x_points = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1
+        height_map_y_points = int(round(pattern_cfg.size[1] / pattern_cfg.resolution)) + 1
+        if(self.use_asymmetric_ppo):
+            self.state_space = self.state_space + height_map_x_points * height_map_y_points"""
+
+
     ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
         curriculum=False,
         size=(8.0, 8.0),
