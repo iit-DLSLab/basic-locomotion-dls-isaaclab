@@ -334,7 +334,7 @@ class LocomotionEnv(DirectRLEnv):
 
         # Critic OBS could be different if needed
         if(self.cfg.use_asymmetric_ppo):
-            obs_critic = custom_observations._get_privileged_observation(self)
+            obs_critic = custom_observations._get_privileged_observation_asymmetric(self)
             observations["critic"] = torch.cat((obs, obs_critic), dim=-1)
         else:
             observations["critic"] = obs

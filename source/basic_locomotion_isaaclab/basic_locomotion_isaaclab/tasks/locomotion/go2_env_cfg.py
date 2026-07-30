@@ -157,7 +157,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
         
         concurrent_state_est_output_space = 3 #lin_vel_b
         
-        single_concurrent_state_est_observation_space = 3 # base linear velocity
+        single_concurrent_state_est_observation_space = 3 # base linear acceleration
         single_concurrent_state_est_observation_space += 3 # base angular velocity  
         single_concurrent_state_est_observation_space += 3 # projected gravity in base frame
         single_concurrent_state_est_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
@@ -177,7 +177,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     use_rma = False
     if(use_rma):
         rma_network_type = "mlp" # "mlp" or "tcn"
-        rma_use_latent_space = False
+        rma_use_latent_space = True
         if(rma_use_latent_space):
             rma_latent_space = 8
             rma_latent_encoder_hidden_features = 128
@@ -185,15 +185,13 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
         
         rma_privileged_observation_space = 12 # P gain
         rma_privileged_observation_space += 12 # D gain
-        rma_privileged_observation_space += 3 # clean linear velocity
-        rma_privileged_observation_space += 1 # base height error
-        rma_privileged_observation_space += 1 # terrain pitch
-        rma_privileged_observation_space += 4 # foot contacts
+        rma_privileged_observation_space += 12 # static friction
+        rma_privileged_observation_space += 12 # viscous friction
 
         rma_output_space = rma_latent_space if rma_use_latent_space else rma_privileged_observation_space
         observation_space += rma_output_space
 
-        single_rma_observation_space = 3 # base linear velocity
+        single_rma_observation_space = 3 # base linear acceleration
         single_rma_observation_space += 3 # base angular velocity  
         single_rma_observation_space += 3 # projected gravity in base frame
         single_rma_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
