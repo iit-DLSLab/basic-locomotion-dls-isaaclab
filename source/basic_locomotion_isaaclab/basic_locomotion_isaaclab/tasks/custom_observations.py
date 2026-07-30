@@ -89,7 +89,7 @@ def _get_rma(self):
     if self.cfg.observation_noise_model:
         obs = self._observation_noise_model_rma(obs.clone())
 
-    outputs_rma = _get_privileged_observation(self)
+    outputs_rma = _get_privileged_observation_rma(self)
 
     if self.cfg.rma_use_latent_space:
         with torch.no_grad():
@@ -123,7 +123,7 @@ def _get_rma(self):
     return obs_rma
 
 
-def _get_privileged_observation(self):
+def _get_privileged_observation_asymmetric(self):
     asset_cfg = SceneEntityCfg("robot", joint_names=[".*"])
     asset: Articulation = self.scene[asset_cfg.name]
 
@@ -189,3 +189,39 @@ def _get_privileged_observation(self):
     obs_privileged = torch.cat((obs_privileged, height_data), dim=-1)"""
 
     return obs_privileged
+
+
+def _get_privileged_observation_rma(self):
+    asset_cfg = SceneEntityCfg("robot", joint_names=[".*"])
+    asset: Articulation = self.scene[asset_cfg.name]
+
+    # PD of the joints
+    hip_stiffness = asset.actuators["hip"].stiffness
+    thigh_stiffness = asset.actuators["thigh"].stiffness
+    calf_stiffness = asset.actuators["calf"].stiffness
+
+    hip_damping = asset.actuators["hip"].damping
+    thigh_damping = asset.actuators["thigh"].damping
+    calf_damping = asset.actuators["calf"].damping
+
+    default_stiffness = asset.data.default_joint_stiffness[0][0]
+    default_damping = asset.data.default_joint_damping[0][0]
+
+    # Friction of joints
+    static_friction = asset.data.joint_friction_coeff
+    viscous_friction = asset.data.joint_viscous_friction_coeff
+    
+    default_static_friction = asset.data.default_joint_friction_coeff
+    default_viscous_friction = asset.data.default_joint_viscous_friction_coeff
+
+
+
+    obs_rma = torch.cat((
+                        hip_stiffness/default_stiffness, thigh_stiffness/default_stiffness, calf_stiffness/default_stiffness, #P gain
+                        hip_damping/default_damping, thigh_damping/default_damping, calf_damping/default_damping, #D gain
+                        static_friction/default_static_friction, viscous_friction/default_viscous_friction # friction
+                        )
+                    , dim=-1)
+
+
+    return obs_rma
