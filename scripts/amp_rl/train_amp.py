@@ -54,6 +54,7 @@ if args_cli.wandb_username:
 # from rsl_rl.runners import OnPolicyRunner
 from amp_rsl_rl.runners import AMPOnPolicyRunner
 import amp_rsl_rl.algorithms # noqa: F401
+from amp_rsl_rl.utils.wandb_utils import WandbSummaryWriter
 
 
 from isaaclab.envs import (
@@ -64,7 +65,8 @@ from isaaclab.envs import (
     multi_agent_to_single_agent,
 )
 from isaaclab.utils.dict import print_dict
-from isaaclab.utils.io import dump_pickle, dump_yaml
+from isaaclab.utils.io import dump_yaml
+
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import get_checkpoint_path
@@ -73,6 +75,17 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 
 # Import extensions to set up environment tasks
 import basic_locomotion_isaaclab.tasks  # noqa: F401
+
+
+# amp-rsl-rl 2.2.3 still calls the pre-RSL-RL-3.3 ``log_config`` API,
+# while the installed writer exposes ``store_config``. Keep the compatibility
+# local to the AMP launcher until the upstream runner is updated.
+if not hasattr(WandbSummaryWriter, "log_config"):
+    def _log_wandb_config(self, env_cfg, runner_cfg, alg_cfg, policy_cfg):
+        del alg_cfg, policy_cfg
+        self.store_config(env_cfg, runner_cfg)
+
+    WandbSummaryWriter.log_config = _log_wandb_config
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -155,11 +168,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
-    dump_pickle(os.path.join(log_dir, "params", "env.pkl"), env_cfg)
-    dump_pickle(os.path.join(log_dir, "params", "agent.pkl"), agent_cfg)
 
     # run training
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+
+    print(f"Training time: {round(time.time() - start_time, 2)} seconds")
 
     # close the simulator
     env.close()

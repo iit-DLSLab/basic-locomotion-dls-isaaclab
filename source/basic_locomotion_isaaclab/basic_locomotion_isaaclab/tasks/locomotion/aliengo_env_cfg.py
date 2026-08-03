@@ -307,7 +307,7 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
     )
 
     # robot
-    robot: ArticulationCfg = GO2_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot: ArticulationCfg = ALIENGO_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     contact_sensor: ContactSensorCfg = ContactSensorCfg(
         prim_path="/World/envs/env_.*/Robot/.*", history_length=3, update_period=0.005, track_air_time=True
     )
@@ -316,7 +316,6 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
                            'FL_thigh_joint', 'FR_thigh_joint', 'RL_thigh_joint', 'RR_thigh_joint',  
                            'FL_calf_joint', 'FR_calf_joint', 'RL_calf_joint', 'RR_calf_joint']
 
-    
     # If you want to use AMP
     use_amp = False
 

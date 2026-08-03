@@ -1,7 +1,7 @@
 from isaaclab.utils import configclass
 
-from pathlib import Path
 from dataclasses import MISSING
+from pathlib import Path
 
 @configclass
 class DiscriminatorCfg:
@@ -23,13 +23,25 @@ class DiscriminatorCfg:
     """Whether to use empirical normalization for the discriminator inputs. Default is False."""
 
 
-#AMP Related Stuff
-amp_data_path = "./../../../../../../scripts/amp_rl/amp_dataset/"
-dataset_names = ["flat", "boxes", "stairs"]
-dataset_weights = [1.0, 1.0, 1.0, 1.0]
-slow_down_factor = 1.0
+# AMP dataset configuration consumed by AMPOnPolicyRunner.
+dataset = {
+    "amp_data_path": str(Path(__file__).resolve().parents[6] / "scripts" / "amp_rl" / "amp_dataset"),
+    "datasets": {
+        "flat": 1.0,
+        "boxes": 1.0,
+        "stairs": 1.0,
+    },
+    "slow_down_factor": 1.0,
+    "amp_joint_names": [
+        "FL_hip_joint", "FR_hip_joint", "RL_hip_joint", "RR_hip_joint",
+        "FL_thigh_joint", "FR_thigh_joint", "RL_thigh_joint", "RR_thigh_joint",
+        "FL_calf_joint", "FR_calf_joint", "RL_calf_joint", "RR_calf_joint",
+    ],
+    "velocity_representation": "body_fixed",
+}
+
 discriminator = DiscriminatorCfg(
-    hidden_dims=[1024, 512],
+    hidden_dims=[512, 256],
     reward_scale=1.0,
     loss_type="BCEWithLogits",
     empirical_normalization= False

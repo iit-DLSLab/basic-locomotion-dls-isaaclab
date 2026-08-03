@@ -43,10 +43,7 @@ class FlatPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     )
 
     # AMP Related Stuff
-    amp_data_path = amp_cfg.amp_data_path
-    dataset_names = list(amp_cfg.dataset_names)
-    dataset_weights = list(amp_cfg.dataset_weights)
-    slow_down_factor = amp_cfg.slow_down_factor
+    dataset = deepcopy(amp_cfg.dataset)
     discriminator = deepcopy(amp_cfg.discriminator)
 
     # Morphosymm-rl Related Stuff
@@ -61,7 +58,7 @@ class RoughPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "rough_direct"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
-        class_name="ActorCriticSymm", #ActorCritic, ActorCriticRecurrent, ActorCriticSymm, ActorCriticMoE
+        class_name="ActorCritic", #ActorCritic, ActorCriticRecurrent, ActorCriticSymm, ActorCriticMoE
         init_noise_std=1.0,
         actor_hidden_dims=[128, 128, 128],
         critic_hidden_dims=[128, 128, 128],
@@ -83,11 +80,8 @@ class RoughPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         max_grad_norm=1.0,
     )
 
-     # AMP Related Stuff
-    amp_data_path = amp_cfg.amp_data_path
-    dataset_names = list(amp_cfg.dataset_names)
-    dataset_weights = list(amp_cfg.dataset_weights)
-    slow_down_factor = amp_cfg.slow_down_factor
+    # AMP Related Stuff
+    dataset = deepcopy(amp_cfg.dataset)
     discriminator = deepcopy(amp_cfg.discriminator)
 
     # Morphosymm-rl Related Stuff
