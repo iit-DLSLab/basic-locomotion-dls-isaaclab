@@ -167,9 +167,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         normalizer = None
 
     # export policy to onnx/jit
+    # Some equivariant actors keep non-leaf cache tensors that cannot be
+    # deep-copied by IsaacLab exporters. If available, switch to the plain
+    # adapter module used specifically for deployment export.
+    policy_for_export = policy_nn.export_for_isaaclab() if hasattr(policy_nn, "export_for_isaaclab") else policy_nn
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
-    export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    export_policy_as_jit(policy_for_export, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+    export_policy_as_onnx(policy_for_export, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+
 
 
     dt = env.unwrapped.step_dt
