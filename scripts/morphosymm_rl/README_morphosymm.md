@@ -3,26 +3,24 @@
 These script integrate with morphosymm-rl to train a policy with symmetries.
 
 
-## How to use Depth to Heightmap
+## How to use Morphologycal Symmetries
 
-1. First, you need to train a locomotion policy
+- To train a locomotion policy modify the related cfg file [morphosymm_cfg](./../../source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/tasks/locomotion/agents/morphosymm_cfg.py) with the needed observation.
 
-```bash
-python scripts/rsl_rl/train.py --task=Locomotion-Go2-Rough-Vision --num_envs=4096 --headless
-```
+- Check the [how to](https://github.com/iit-DLSLab/morphosymm-rl/blob/main/README_how_to.md) first!!!
 
-2. Launch the train_dagger.py script. This will load the latest policy you trained in step 1.
+- Train with
 
 ```bash
-python scripts/depth_to_heightmap/collect_depth_to_heightmap.py --task=Locomotion-Go2-Rough-Vision --num_envs=8192 --headless
+python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Go2-Flat --num_envs=4096 --headless
+python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Go2-Rough-Blind --num_envs=4096 --headless
+python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Go2-Rough-Vision --num_envs=4096 --headless
 ```
 
-3. Train the network
+- Play with
+
 ```bash
-python scripts/depth_to_heightmap/terrain_reconstruction_cnn.py
-python scripts/depth_to_heightmap/terrain_reconstruction_transformer.py
+python scripts/morphosymm_rl/play_symm.py --task=Locomotion-Go2-Flat --num_envs=4096 --headless
+python scripts/morphosymm_rl/play_symm.py --task=Locomotion-Go2-Rough-Blind --num_envs=4096 --headless
+python scripts/morphosymm_rl/play_symm.py --task=Locomotion-Go2-Rough-Vision --num_envs=4096 --headless
 ```
-
-## Deploy
-
-Currently, the deploy folder does not contain any utils for this.
