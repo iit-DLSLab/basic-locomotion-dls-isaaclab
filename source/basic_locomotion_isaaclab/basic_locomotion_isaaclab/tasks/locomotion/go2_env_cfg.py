@@ -122,6 +122,8 @@ class EventCfg:
 class Go2FlatEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 20.0
+    terrain_curriculum_move_up_error_percent = 20.0
+    terrain_curriculum_move_down_error_percent = 50.0
     decimation = 4
     action_scale = 0.5
     action_space = 12
@@ -133,7 +135,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     observation_space += 12 # joint velocities
     observation_space += 12 # last actions
 
-    use_clock_signal = False
+    use_clock_signal = True
     if(use_clock_signal):
         observation_space += 4 # clock signal for periodic gait
 
@@ -149,6 +151,13 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
 
 
     use_imu = False
+    # an imu sensor in case we don't want any state estimator (for now we can't use sites from the xml)
+    imu = ImuCfg(
+        prim_path="/World/envs/env_.*/Robot/base", 
+        offset=ImuCfg.OffsetCfg(
+            pos=(-0.02557, 0, 0.04232)
+        ), 
+        debug_vis=False)
 
     
     use_concurrent_state_est = False
@@ -208,6 +217,27 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
         rma_ep_saving_start = 6000
 
 
+    # Base-centered height scanner for pose-related rewards and privileged observations.
+    pose_height_scanner = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+        ray_alignment='yaw',
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.2, size=[0.6, 0.6]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+    # Template copied onto each foot link to measure the terrain immediately around that foot.
+    foot_height_scanner = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/FL_foot",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.5)),
+        ray_alignment="yaw",
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.1, 0.1]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+
     # asymmetric ppo
     use_asymmetric_ppo = True
     if(use_asymmetric_ppo):
@@ -217,11 +247,13 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
         state_space += 2 #base pitch and height
         state_space += 3 #clean lin vel b
         state_space += 4 #contacts foot
+        pattern_cfg = pose_height_scanner.pattern_cfg
+        height_map_x_points = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1
+        height_map_y_points = int(round(pattern_cfg.size[1] / pattern_cfg.resolution)) + 1
+        if(use_asymmetric_ppo):
+            state_space += height_map_x_points * height_map_y_points
     else:
         state_space = 0
-
-
-    use_amp = False
 
 
     # simulation
@@ -255,34 +287,6 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
         debug_vis=False,
     )
 
-    # Base-centered height scanner for pose-related rewards and privileged observations.
-    pose_height_scanner = RayCasterCfg(
-        prim_path="/World/envs/env_.*/Robot/base",
-        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
-        ray_alignment='yaw',
-        pattern_cfg=patterns.GridPatternCfg(resolution=0.2, size=[0.6, 0.6]),
-        debug_vis=False,
-        mesh_prim_paths=["/World/ground"],
-    )
-
-    # Template copied onto each foot link to measure the terrain immediately around that foot.
-    foot_height_scanner = RayCasterCfg(
-        prim_path="/World/envs/env_.*/Robot/FL_foot",
-        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.5)),
-        ray_alignment="yaw",
-        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.1, 0.1]),
-        debug_vis=False,
-        mesh_prim_paths=["/World/ground"],
-    )
-
-    # an imu sensor in case we don't want any state estimator (for now we can't use sites from the xml)
-    imu = ImuCfg(
-        prim_path="/World/envs/env_.*/Robot/base", 
-        offset=ImuCfg.OffsetCfg(
-            pos=(-0.02557, 0, 0.04232)
-        ), 
-        debug_vis=False)
-
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=4.0, replicate_physics=True)
@@ -312,6 +316,10 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
                            'FL_thigh_joint', 'FR_thigh_joint', 'RL_thigh_joint', 'RR_thigh_joint',  
                            'FL_calf_joint', 'FR_calf_joint', 'RL_calf_joint', 'RR_calf_joint']
 
+    
+    # If you want to use AMP
+    use_amp = False
+    
     # Desired tracking variables
     desired_base_height = 0.30
     desired_feet_height = 0.05
@@ -348,15 +356,15 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
 
     # Feet reward scale
     feet_air_time_reward_scale = 0.25
-    feet_air_time_variance_reward_scale = -1.0
+    feet_air_time_variance_reward_scale = -1.0*0.0
 
-    feet_height_clearance_aperiodic_reward_scale = 0.25 * 0.0  
-    feet_height_clearance_periodic_reward_scale = 0.25 * 0.0
+    feet_height_clearance_aperiodic_reward_scale = 0.25*0.0  
+    feet_height_clearance_periodic_reward_scale = 0.25*0.0
     
-    feet_height_clearance_mujoco_aperiodic_reward_scale = 0.25
-    feet_height_clearance_mujoco_periodic_reward_scale = 0.25 * 0.0
+    feet_height_clearance_mujoco_aperiodic_reward_scale = 0.25*0.0
+    feet_height_clearance_mujoco_periodic_reward_scale = 0.25
     
-    feet_slide_reward_scale = -0.25
+    feet_slide_reward_scale = -0.25*0.0
     
     feet_to_hip_distance_reward_scale = 1.5
     # This is used in loocmotion_env.py for the above reward
@@ -372,7 +380,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
 
 
     # Contact suggestion reward scale
-    periodic_contact_suggestion_reward_scale =  0.5 * 0.0
+    periodic_contact_suggestion_reward_scale = 0.5
     # Desired step freq and duty factor (if periodic gait contact suggestion is used)
     desired_step_freq = 1.4
     desired_duty_factor = 0.65
@@ -387,16 +395,8 @@ from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 @configclass
 class Go2RoughBlindEnvCfg(Go2FlatEnvCfg):
 
-    """def __post_init__(self) -> None:
-        pattern_cfg = self.pose_height_scanner.pattern_cfg
-        height_map_x_points = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1
-        height_map_y_points = int(round(pattern_cfg.size[1] / pattern_cfg.resolution)) + 1
-        if(self.use_asymmetric_ppo):
-            self.state_space = self.state_space + height_map_x_points * height_map_y_points"""
-
-
     ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
-        curriculum=False,
+        curriculum=True,
         size=(8.0, 8.0),
         border_width=20.0,
         num_rows=10,
@@ -409,11 +409,15 @@ class Go2RoughBlindEnvCfg(Go2FlatEnvCfg):
             "flat": terrain_gen.MeshPlaneTerrainCfg(
                 proportion=0.2
             ),
-            "boxes": terrain_gen.MeshRandomGridTerrainCfg(
-                proportion=0.1, grid_width=0.45, grid_height_range=(0.05, 0.10), platform_width=2.0,
-            ),
-            "star": terrain_gen.MeshStarTerrainCfg(
-                proportion=0.1, num_bars=10, bar_width_range=(0.15, 0.20), bar_height_range=(0.05, 0.13), platform_width=2.0,
+            "discrete_obstacles_terrain": terrain_gen.MeshRepeatedBoxesTerrainCfg(
+                proportion=0.2,         
+                abs_height_noise=(-0.05, 0.05),
+                object_params_start=terrain_gen.MeshRepeatedBoxesTerrainCfg.ObjectCfg(
+                    num_objects=20, height=0.10, size=(0.6, 0.6), max_yx_angle=0.0, degrees=True
+                ),
+                object_params_end=terrain_gen.MeshRepeatedBoxesTerrainCfg.ObjectCfg(
+                    num_objects=20, height=0.40, size=(1.2, 1.2), max_yx_angle=0.0, degrees=True
+                ),platform_width=2.0,
             ),
             "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
                 proportion=0.1, noise_range=(0.02, 0.06), noise_step=0.02, border_width=0.25
@@ -425,11 +429,11 @@ class Go2RoughBlindEnvCfg(Go2FlatEnvCfg):
                 proportion=0.1, slope_range=(0.2, 0.4), platform_width=2.0, border_width=0.25
             ),
             "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
-                proportion=0.15, step_height_range=(0.05, 0.13), step_width=0.3,
+                proportion=0.2, step_height_range=(0.05, 0.13), step_width=0.3,
                 platform_width=3.0, border_width=1.0, holes=False,
             ),
             "pyramid_stairs_inv": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
-                proportion=0.15, step_height_range=(0.05, 0.13), step_width=0.3,
+                proportion=0.2, step_height_range=(0.05, 0.13), step_width=0.3,
                 platform_width=3.0, border_width=1.0, holes=False,
             ),
         },

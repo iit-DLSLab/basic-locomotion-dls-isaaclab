@@ -158,6 +158,11 @@ class LocomotionEnv(DirectRLEnv):
                 "stance_contact_suggestion",
             ]
         }
+        # Per-environment velocity-tracking error used by the terrain curriculum.
+        # Accumulating both the L1 error and command magnitude gives a stable
+        # episode-level percentage even when individual commands are small.
+        self._lin_vel_l1_error_sum = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+        self._lin_vel_command_l1_sum = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
         # Get specific body indices
         self._base_contact_sensor_id, _ = self._contact_sensor.find_bodies("base")
         self._feet_contact_sensor_ids, _ = self._contact_sensor.find_bodies(["FL_foot", "FR_foot", "RL_foot", "RR_foot"], preserve_order=True)
@@ -455,6 +460,13 @@ class LocomotionEnv(DirectRLEnv):
         # Logging
         for key, value in rewards.items():
             self._episode_sums[key] += value
+        lin_vel_command_l1 = torch.sum(torch.abs(self._commands[:, :2]), dim=1)
+        tracks_linear_command = lin_vel_command_l1 > 0.01
+        lin_vel_l1_error = torch.sum(
+            torch.abs(self._commands[:, :2] - self._robot.data.root_lin_vel_b[:, :2]), dim=1
+        )
+        self._lin_vel_l1_error_sum += lin_vel_l1_error * tracks_linear_command
+        self._lin_vel_command_l1_sum += lin_vel_command_l1 * tracks_linear_command
         return reward
 
 
@@ -471,14 +483,26 @@ class LocomotionEnv(DirectRLEnv):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self._robot._ALL_INDICES
 
+        lin_vel_command_l1_sum = self._lin_vel_command_l1_sum[env_ids]
+        has_linear_velocity_commands = lin_vel_command_l1_sum > 0.0
+        lin_vel_l1_error_percent = 100.0 * self._lin_vel_l1_error_sum[env_ids] / torch.clamp(
+            lin_vel_command_l1_sum, min=1.0e-6
+        )
+
         if(self._terrain.cfg.terrain_generator is not None and self._terrain.cfg.terrain_generator.curriculum == True):
-            # Curriculum based on the distance the robot walked
-            distance = torch.norm(self._robot.data.root_state_w[env_ids, :2] - self._terrain.env_origins[env_ids, :2], dim=1)
-            # robots that walked far enough progress to harder terrains
-            move_up = distance > self._terrain.cfg.terrain_generator.size[0] / 2
-            # robots that walked less than half of their required distance go to simpler terrains
-            move_down = distance < torch.norm(self._commands[env_ids, :2], dim=1) * self.max_episode_length_s * 0.5
-            move_down *= ~move_up
+            # The command changes during an episode, so displacement from the
+            # origin is not a reliable measure of tracking quality. Use the
+            # episode-level linear-velocity L1 error relative to the commands.
+            move_up = torch.logical_and(
+                has_linear_velocity_commands,
+                lin_vel_l1_error_percent
+                < getattr(self.cfg, "terrain_curriculum_move_up_error_percent", 20.0),
+            )
+            move_down = torch.logical_and(
+                has_linear_velocity_commands,
+                lin_vel_l1_error_percent
+                > getattr(self.cfg, "terrain_curriculum_move_down_error_percent", 50.0),
+            )
             # update terrain levels
             self._terrain.update_env_origins(env_ids, move_up, move_down)
 
@@ -539,6 +563,9 @@ class LocomotionEnv(DirectRLEnv):
         self.extras["log"] = dict()
         self.extras["log"].update(extras)
         extras = dict()
+        extras["Episode_Metric/lin_vel_l1_error_percent"] = torch.sum(lin_vel_l1_error_percent) / torch.clamp(
+            torch.count_nonzero(has_linear_velocity_commands), min=1
+        )
         extras["Episode_Termination/base_contact"] = torch.count_nonzero(self.reset_terminated[env_ids]).item()
         extras["Episode_Termination/time_out"] = torch.count_nonzero(self.reset_time_outs[env_ids]).item()
         
@@ -546,6 +573,9 @@ class LocomotionEnv(DirectRLEnv):
             extras["Episode_Curriculum/terrain_levels"] = torch.mean(self._terrain.terrain_levels.float())
         
         self.extras["log"].update(extras)
+
+        self._lin_vel_l1_error_sum[env_ids] = 0.0
+        self._lin_vel_command_l1_sum[env_ids] = 0.0
 
 
     def _set_debug_vis_impl(self, debug_vis: bool):

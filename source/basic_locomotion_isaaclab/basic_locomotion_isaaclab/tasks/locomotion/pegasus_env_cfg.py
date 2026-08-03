@@ -114,6 +114,8 @@ class EventCfg:
 class PegasusFlatEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 20.0
+    terrain_curriculum_move_up_error_percent = 20.0
+    terrain_curriculum_move_down_error_percent = 50.0
     decimation = 4
     action_scale = 0.5
     action_space = 12
@@ -140,14 +142,22 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
         history_length = 1
 
     use_imu = False
+    # an imu sensor in case we don't want any state estimator (for now we can't use sites from the xml)
+    imu = ImuCfg(
+        prim_path="/World/envs/env_.*/Robot/base", 
+        offset=ImuCfg.OffsetCfg(
+            pos=(-0.02557, 0, 0.04232)
+        ), 
+        debug_vis=False)
+
     
-    use_concurrent_state_est = True
+    use_concurrent_state_est = False
     if(use_concurrent_state_est):
         concurrent_state_est_network_type = "tcn" # "mlp" or "tcn"
         
         concurrent_state_est_output_space = 3 #lin_vel_b
         
-        single_concurrent_state_est_observation_space = 3 # base linear velocity
+        single_concurrent_state_est_observation_space = 3 # base linear acceleration
         single_concurrent_state_est_observation_space += 3 # base angular velocity  
         single_concurrent_state_est_observation_space += 3 # projected gravity in base frame
         single_concurrent_state_est_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
@@ -167,7 +177,7 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
     use_rma = False
     if(use_rma):
         rma_network_type = "mlp" # "mlp" or "tcn"
-        rma_use_latent_space = False
+        rma_use_latent_space = True
         if(rma_use_latent_space):
             rma_latent_space = 8
             rma_latent_encoder_hidden_features = 128
@@ -175,15 +185,13 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
         
         rma_privileged_observation_space = 12 # P gain
         rma_privileged_observation_space += 12 # D gain
-        rma_privileged_observation_space += 3 # clean linear velocity
-        rma_privileged_observation_space += 1 # base height error
-        rma_privileged_observation_space += 1 # terrain pitch
-        rma_privileged_observation_space += 4 # foot contacts
+        rma_privileged_observation_space += 12 # static friction
+        rma_privileged_observation_space += 12 # viscous friction
 
         rma_output_space = rma_latent_space if rma_use_latent_space else rma_privileged_observation_space
         observation_space += rma_output_space
 
-        single_rma_observation_space = 3 # base linear velocity
+        single_rma_observation_space = 3 # base linear acceleration
         single_rma_observation_space += 3 # base angular velocity  
         single_rma_observation_space += 3 # projected gravity in base frame
         single_rma_observation_space += 3 # command (desired linear vel in x and y, desired yaw rate)
@@ -200,6 +208,27 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
         rma_ep_saving_start = 6000
 
 
+    # Base-centered height scanner for pose-related rewards and privileged observations.
+    pose_height_scanner = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+        ray_alignment='yaw',
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.2, size=[0.6, 0.6]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+    # Template copied onto each foot link to measure the terrain immediately around that foot.
+    foot_height_scanner = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot/FL_foot",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.5)),
+        ray_alignment="yaw",
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.1, 0.1]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+
     # asymmetric ppo
     use_asymmetric_ppo = True
     if(use_asymmetric_ppo):
@@ -209,11 +238,13 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
         state_space += 2 #base pitch and height
         state_space += 3 #clean lin vel b
         state_space += 4 #contacts foot
+        pattern_cfg = pose_height_scanner.pattern_cfg
+        height_map_x_points = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1
+        height_map_y_points = int(round(pattern_cfg.size[1] / pattern_cfg.resolution)) + 1
+        if(use_asymmetric_ppo):
+            state_space += height_map_x_points * height_map_y_points
     else:
         state_space = 0
-
-
-    use_amp = False
 
 
     # simulation
@@ -247,34 +278,6 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
         debug_vis=False,
     )
 
-    # Base-centered height scanner for pose-related rewards and privileged observations.
-    pose_height_scanner = RayCasterCfg(
-        prim_path="/World/envs/env_.*/Robot/base",
-        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
-        ray_alignment='yaw',
-        pattern_cfg=patterns.GridPatternCfg(resolution=0.2, size=[0.6, 0.6]),
-        debug_vis=False,
-        mesh_prim_paths=["/World/ground"],
-    )
-
-    # Template copied onto each foot link to measure the terrain immediately around that foot.
-    foot_height_scanner = RayCasterCfg(
-        prim_path="/World/envs/env_.*/Robot/FL_foot",
-        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.5)),
-        ray_alignment="yaw",
-        pattern_cfg=patterns.GridPatternCfg(resolution=0.05, size=[0.1, 0.1]),
-        debug_vis=False,
-        mesh_prim_paths=["/World/ground"],
-    )
-
-    # an imu sensor in case we don't want any state estimator (for now we can't use sites from the xml)
-    imu = ImuCfg(
-        prim_path="/World/envs/env_.*/Robot/base", 
-        offset=ImuCfg.OffsetCfg(
-            pos=(-0.02557, 0, 0.04232)
-        ), 
-        debug_vis=False)
-
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=4.0, replicate_physics=True)
@@ -295,7 +298,7 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
     )
 
     # robot
-    robot: ArticulationCfg = PEGASUS_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot: ArticulationCfg = GO2_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     contact_sensor: ContactSensorCfg = ContactSensorCfg(
         prim_path="/World/envs/env_.*/Robot/.*", history_length=3, update_period=0.005, track_air_time=True
     )
@@ -303,6 +306,10 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
     desired_joints_order = ['FL_hip_joint', 'FR_hip_joint', 'RL_hip_joint', 'RR_hip_joint',
                            'FL_thigh_joint', 'FR_thigh_joint', 'RL_thigh_joint', 'RR_thigh_joint',  
                            'FL_calf_joint', 'FR_calf_joint', 'RL_calf_joint', 'RR_calf_joint']
+
+    
+    # If you want to use AMP
+    use_amp = False
 
     # Desired tracking variables
     desired_base_height = 0.60

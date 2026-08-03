@@ -61,7 +61,7 @@ class RoughPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "rough_direct"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
-        class_name="ActorCritic", #ActorCritic, ActorCriticRecurrent, ActorCriticSymm, ActorCriticMoE
+        class_name="ActorCriticSymm", #ActorCritic, ActorCriticRecurrent, ActorCriticSymm, ActorCriticMoE
         init_noise_std=1.0,
         actor_hidden_dims=[128, 128, 128],
         critic_hidden_dims=[128, 128, 128],

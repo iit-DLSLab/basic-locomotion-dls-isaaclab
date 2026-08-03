@@ -43,7 +43,7 @@ obs_space_names_actor = [
         "joints_pos",
         "clock_data",
     ]*int(history_length)
-obs_space_names_actor += ["heightmap:7x9"]
+#obs_space_names_actor += ["heightmap:7x9"]
 
 
 # Critic OBS
@@ -58,13 +58,13 @@ obs_space_names_critic = [
         "joints_pos",
         "clock_data",
     ]*int(history_length)
-obs_space_names_critic += ["heightmap:7x9"]
+#obs_space_names_critic += ["heightmap:7x9"]
 obs_space_names_critic += [    
         "clock_data", "clock_data", "clock_data",  # P gains
         "clock_data", "clock_data", "clock_data",  # D gains
 ]
 obs_space_names_critic += ["base_lin_vel", "invariant_scalar", "invariant_scalar", "clock_data"]
-
+obs_space_names_critic += ["heightmap:4x4"]
 
 # Action Space
 action_space_names = ["joints_pos"]

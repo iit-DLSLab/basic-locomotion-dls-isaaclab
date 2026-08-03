@@ -165,10 +165,20 @@ def _get_privileged_observation_asymmetric(self):
     delta_z = mean_height_ray_front - mean_height_ray_back
     delta_s = torch.tensor(distance_between_front_and_back).to(self.device)
     terrain_pitch = -torch.atan2(delta_z, delta_s)
-
+    
+    # Foot contact data
     contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_contact_sensor_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
-  
 
+    # Pose height scanner data
+    height_data = (
+        self._pose_height_scanner.data.pos_w[:, 2].unsqueeze(1)
+        - self._pose_height_scanner.data.ray_hits_w[..., 2]
+        - 0.5
+    )
+    height_data = torch.nan_to_num(height_data, nan=0.0, posinf=1.0, neginf=-1.0)
+    height_data = height_data.clip(-1.0, 1.0)
+    
+    # Privileged observation
     obs_privileged = torch.cat((
                         hip_stiffness/default_stiffness, thigh_stiffness/default_stiffness, calf_stiffness/default_stiffness, #P gain
                         hip_damping/default_damping, thigh_damping/default_damping, calf_damping/default_damping, #D gain
@@ -176,17 +186,10 @@ def _get_privileged_observation_asymmetric(self):
                         height_error.unsqueeze(1),
                         terrain_pitch.unsqueeze(1),
                         contacts_foot,
+                        height_data
                         )
                     , dim=-1)
 
-    """height_data = (
-        self._pose_height_scanner.data.pos_w[:, 2].unsqueeze(1)
-        - self._pose_height_scanner.data.ray_hits_w[..., 2]
-        - 0.5
-    )
-    height_data = torch.nan_to_num(height_data, nan=0.0, posinf=1.0, neginf=-1.0)
-    height_data = height_data.clip(-1.0, 1.0)
-    obs_privileged = torch.cat((obs_privileged, height_data), dim=-1)"""
 
     return obs_privileged
 
