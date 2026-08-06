@@ -99,9 +99,9 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
-            "stiffness_distribution_params": (-2.0, 2.0),
-            "damping_distribution_params": (-0.5, 0.5),
-            "operation": "add",
+            "stiffness_distribution_params": (0.8, 1.2),
+            "damping_distribution_params": (0.8, 1.2),
+            "operation": "scale",
             "distribution": "uniform",
         },
     )
@@ -247,11 +247,11 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
         state_space += 2 #base pitch and height
         state_space += 3 #clean lin vel b
         state_space += 4 #contacts foot
+        
         pattern_cfg = pose_height_scanner.pattern_cfg
         height_map_x_points = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1
         height_map_y_points = int(round(pattern_cfg.size[1] / pattern_cfg.resolution)) + 1
-        if(use_asymmetric_ppo):
-            state_space += height_map_x_points * height_map_y_points
+        state_space += height_map_x_points * height_map_y_points
     else:
         state_space = 0
 
