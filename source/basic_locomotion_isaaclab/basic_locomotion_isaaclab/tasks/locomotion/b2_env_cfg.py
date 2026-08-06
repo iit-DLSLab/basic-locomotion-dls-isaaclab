@@ -143,7 +143,7 @@ class B2FlatEnvCfg(DirectRLEnvCfg):
     imu = ImuCfg(
         prim_path="/World/envs/env_.*/Robot/base", 
         offset=ImuCfg.OffsetCfg(
-            pos=(0, -0.02341, 0.04927)
+            pos=(0.0, -0.02341, 0.04927)
         ), 
         debug_vis=False)
 
