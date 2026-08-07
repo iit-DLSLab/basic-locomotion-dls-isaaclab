@@ -38,6 +38,7 @@ if os.environ.get("BASIC_LOCOMOTION_ROS2_SOURCED") != "1":
 import rclpy 
 from rclpy.node import Node 
 from sensor_msgs.msg import Joy
+from visualization_msgs.msg import Marker, MarkerArray
 from dls2_interface.msg import BaseState, BlindState, Imu, TrajectoryGenerator
 
 import time
@@ -51,7 +52,9 @@ import copy
 # Gym and Simulation related imports
 import mujoco
 from gym_quadruped.quadruped_env import QuadrupedEnv
+from gym_quadruped.sensors.heightmap import HeightMap
 from gym_quadruped.utils.quadruped_utils import LegsAttr
+from gym_quadruped.utils.mujoco.visual import render_sphere
 
 
 # Locomotion Policy imports
@@ -67,7 +70,7 @@ os.system("echo -20 > /proc/" + str(pid) + "/autogroup")
 #for real time, launch it with chrt -r 99 python3 run_controller.py
 
 
-USE_MUJOCO_RENDER = False
+USE_MUJOCO_RENDER = True
 
 
 class ControllerROS2(Node):
@@ -112,6 +115,7 @@ class ControllerROS2(Node):
         self.first_message_base_arrived = False
         self.first_message_joints_arrived = False 
         self.first_message_imu_arrived = False
+        self.first_message_heightmap_arrived = False
 
         # Timing stuff
         self.loop_time = 0.002
@@ -135,6 +139,25 @@ class ControllerROS2(Node):
         
         # Initialization of variables used in the main control loop --------------------------------
         self.locomotion_policy = LocomotionPolicyWrapper(env=self.env)
+
+        # On perceptive policies, use the ROS marker scan in place of MuJoCo ray casting.
+        self.heightmap = None
+        self._last_heightmap_warning_time = 0.0
+        if self.locomotion_policy.use_vision:
+            pattern_cfg = config.training_env["perceptive_height_scanner"]["pattern_cfg"]
+            resolution_heightmap = pattern_cfg["resolution"]
+            num_rows_heightmap = round(pattern_cfg["size"][0] / resolution_heightmap) + 1
+            num_cols_heightmap = round(pattern_cfg["size"][1] / resolution_heightmap) + 1
+            self.heightmap = HeightMap(
+                num_rows=num_rows_heightmap,
+                num_cols=num_cols_heightmap,
+                dist_x=resolution_heightmap,
+                dist_y=resolution_heightmap,
+                mj_model=self.env.mjModel,
+                mj_data=self.env.mjData,
+            )
+            self.subscription_heightmap = self.create_subscription(MarkerArray, "/height_scan_markers", self.get_heightmap_callback, 1,)
+
 
 
         self.stand_up_and_down_actions = LegsAttr(*[np.zeros((1, int(self.env.mjModel.nu/4))) for _ in range(4)])
@@ -178,7 +201,6 @@ class ControllerROS2(Node):
             exit(0)
 
 
-
     def get_base_state_callback(self, msg):
         self.position = np.array(msg.pose.position) #world frame
         # For the quaternion, the order is [x, y, z, w] on DLS2 but here we want [w, x, y, z] (mujoco convention)
@@ -187,7 +209,6 @@ class ControllerROS2(Node):
         self.angular_velocity = np.array(msg.velocity.angular) #base frame
 
         self.first_message_base_arrived = True
-
 
 
     def get_blind_state_callback(self, msg):
@@ -206,6 +227,45 @@ class ControllerROS2(Node):
         self.first_message_imu_arrived = True
 
 
+    def get_heightmap_callback(self, msg):
+        """Load a complete ``/height_scan_markers`` scan into ``self.heightmap``."""
+        try:
+            markers = sorted(
+                (
+                    marker
+                    for marker in msg.markers
+                    if marker.action == Marker.ADD and marker.type == Marker.SPHERE
+                ),
+                key=lambda marker: marker.id,
+            )
+            sample_count = self.heightmap.num_rows * self.heightmap.num_cols
+            points = np.array(
+                [
+                    [marker.pose.position.x, marker.pose.position.y, marker.pose.position.z]
+                    for marker in markers
+                ],
+                dtype=np.float64,
+            )
+            if not np.all(np.isfinite(points)):
+                raise ValueError("marker positions must be finite")
+
+            # Publisher order is Y-major/X-minor. HeightMap uses descending X/Y.
+            grid = points.reshape(self.heightmap.num_cols, self.heightmap.num_rows, 3)
+            grid = np.flip(grid.transpose(1, 0, 2), axis=(0, 1))
+            self.heightmap.sensor_data_matrix[:] = grid[:, :, None, :]
+        except ValueError as error:
+            # Keep the last complete scan and throttle malformed-scan warnings.
+            now = time.monotonic()
+            if now - self._last_heightmap_warning_time >= 2.0:
+                self.get_logger().warning(f"Ignoring height-map markers: {error}")
+                self._last_heightmap_warning_time = now
+            return
+
+        if not self.first_message_heightmap_arrived:
+            self.get_logger().info(f"Received the first complete height map ({sample_count} samples)")
+        self.first_message_heightmap_arrived = True
+
+
     def compute_rl_control(self):
         # Update the loop time
         start_time = time.perf_counter()
@@ -221,6 +281,11 @@ class ControllerROS2(Node):
                 return
         else:
             if(self.first_message_base_arrived==False or self.first_message_joints_arrived==False):
+                return
+        
+        if self.locomotion_policy.use_vision:
+            # base_state is needed to transform markers from base_link to world coordinates.
+            if not self.first_message_base_arrived or not self.first_message_heightmap_arrived:
                 return
         
         # Update the mujoco model
@@ -279,6 +344,16 @@ class ControllerROS2(Node):
         joints_vel.RR = qvel[env.legs_qvel_idx.RR]
         ref_base_lin_vel, ref_base_ang_vel = env.target_base_vel()
 
+        heightmap_data = None
+        if locomotion_policy.use_vision:
+            rotation = np.empty(9, dtype=np.float64)
+            mujoco.mju_quat2Mat(rotation, base_quat_wxyz)
+            local_points = self.heightmap.sensor_data_matrix.reshape(-1, 3)
+            self.heightmap.data = (
+                local_points @ rotation.reshape(3, 3).T + base_pos
+            ).reshape(self.heightmap.sensor_data_matrix.shape)
+            heightmap_data = self.heightmap.data
+
 
         if(self.console.isRLActivated):
 
@@ -295,12 +370,12 @@ class ControllerROS2(Node):
                         ref_base_ang_vel=ref_base_ang_vel,
                         imu_linear_acceleration=self.imu_linear_acceleration,
                         imu_angular_velocity=self.imu_angular_velocity,
-                        imu_orientation=self.imu_orientation)
+                        imu_orientation=self.imu_orientation,
+                        heightmap_data=heightmap_data)
             
             # Impedence Loop
             Kp = locomotion_policy.Kp_walking
             Kd = locomotion_policy.Kd_walking
-
 
         else:
             desired_joint_pos = LegsAttr(*[np.zeros((1, int(env.mjModel.nu/4))) for _ in range(4)])
@@ -326,7 +401,6 @@ class ControllerROS2(Node):
         self.publisher_trajectory_generator.publish(trajectory_generator_msg)
         
         
-        
         # Render the simulation at a certain frequency -----------------------------------------------------------
         if USE_MUJOCO_RENDER:
             RENDER_FREQ = 30  # Hz
@@ -334,7 +408,16 @@ class ControllerROS2(Node):
                 self.env.render()
                 self.last_render_time = time.time()
 
-
+                if locomotion_policy.use_vision and self.heightmap.data is not None:
+                    for i in range(self.heightmap.data.shape[0]):
+                        for j in range(self.heightmap.data.shape[1]):
+                            self.heightmap.geom_ids[i, j] = render_sphere(
+                                viewer=self.env.viewer,
+                                position=self.heightmap.data[i, j, 0],
+                                diameter=0.02,
+                                color=[0, 1, 0, 0.5],
+                                geom_id=self.heightmap.geom_ids[i, j],
+                            )
 
 
 #---------------------------
