@@ -9,11 +9,11 @@ from isaaclab.assets.articulation import ArticulationCfg
 
 from basic_locomotion_isaaclab.assets import ISAAC_ASSET_DIR
 
-armature = [0.015245300717651844, 0.02287333831191063, 0.04345845803618431, 0.02273648791015148, 0.021029189229011536, 0.04288801923394203, 0.020965829491615295, 0.02172032743692398, 0.041628554463386536, 0.016661761328577995, 0.01919594779610634, 0.0420747809112072]
-viscous_friction = [0.21183708310127258, 0.23815694451332092, 0.23462027311325073, 0.2426394820213318, 0.21587151288986206, 0.21994808316230774, 0.22393473982810974, 0.23609080910682678, 0.37616264820098877, 0.2554837763309479, 0.24458086490631104, 0.16209274530410767]
-dynamic_friction = [0.29261451959609985, 0.2158409059047699, 0.9081975817680359, 0.22919607162475586, 0.19076737761497498, 0.5661238431930542, 0.17274132370948792, 0.16221186518669128, 0.9999995827674866, 0.237972229719162, 0.2591995596885681, 0.7882703542709351]
-bias = [0.09999876469373703, 0.09621422737836838, 0.0999980941414833, 0.006213739514350891, 0.0941513404250145, 0.09999898821115494, 0.04979293793439865, 0.09999003261327744, 0.09999995678663254, -0.0999981164932251, 0.041589684784412384, 0.09999736398458481]
-
+armature = [0.017503729090094566, 0.02336602471768856, 0.03732568025588989, 0.022362561896443367, 0.021544823423027992, 0.03847520425915718, 0.020267240703105927, 0.024585673585534096, 0.03516065329313278, 0.021125180646777153, 0.020762519910931587, 0.036424197256565094]
+viscous_friction = [0.20631209015846252, 0.21986860036849976, 0.23434531688690186, 0.24403011798858643, 0.1983535885810852, 0.2536759078502655, 0.2501899302005768, 0.24066618084907532, 0.46991124749183655, 0.29485926032066345, 0.22589823603630066, 0.21030187606811523]
+dynamic_friction = [0.288801908493042, 0.2260836958885193, 0.9928773045539856, 0.21979475021362305, 0.243381530046463, 0.4719296097755432, 0.17030715942382812, 0.17484217882156372, 0.9999997615814209, 0.2757018804550171, 0.2683635354042053, 0.7479071617126465]
+bias = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+delay = 2
 
 GO2_HIP_ACTUATOR_CFG = PaceDCMotorCfg(
     joint_names_expr=[".*_hip_joint"],
@@ -29,7 +29,7 @@ GO2_HIP_ACTUATOR_CFG = PaceDCMotorCfg(
     dynamic_friction={"FL_hip_joint": dynamic_friction[0], "FR_hip_joint": dynamic_friction[3], "RL_hip_joint": dynamic_friction[6], "RR_hip_joint": dynamic_friction[9]},  # dynamic friction coefficient (Nm)
     viscous_friction={"FL_hip_joint": viscous_friction[0], "FR_hip_joint": viscous_friction[3], "RL_hip_joint": viscous_friction[6], "RR_hip_joint": viscous_friction[9]},  # viscous friction coefficient (Nm s/rad)
     armature={"FL_hip_joint": armature[0], "FR_hip_joint": armature[3], "RL_hip_joint": armature[6], "RR_hip_joint": armature[9]},
-    max_delay=1,  # max delay in simulation steps
+    max_delay=delay,  # max delay in simulation steps
 )
 
 
@@ -47,7 +47,7 @@ GO2_THIGH_ACTUATOR_CFG = PaceDCMotorCfg(
     dynamic_friction={"FL_thigh_joint": dynamic_friction[1], "FR_thigh_joint": dynamic_friction[4], "RL_thigh_joint": dynamic_friction[7], "RR_thigh_joint": dynamic_friction[10]},  # dynamic friction coefficient (Nm)
     viscous_friction={"FL_thigh_joint": viscous_friction[1], "FR_thigh_joint": viscous_friction[4], "RL_thigh_joint": viscous_friction[7], "RR_thigh_joint": viscous_friction[10]},  # viscous friction coefficient (Nm s/rad)
     armature={"FL_thigh_joint":armature[1], "FR_thigh_joint": armature[4], "RL_thigh_joint": armature[7], "RR_thigh_joint": armature[10]},
-    max_delay=1,  # max delay in simulation steps
+    max_delay=delay,  # max delay in simulation steps
 )
 
 
@@ -65,7 +65,7 @@ GO2_CALF_ACTUATOR_CFG = PaceDCMotorCfg(
     dynamic_friction={"FL_calf_joint": dynamic_friction[2], "FR_calf_joint": dynamic_friction[5], "RL_calf_joint": dynamic_friction[8], "RR_calf_joint": dynamic_friction[11]},  # dynamic friction coefficient (Nm)
     viscous_friction={"FL_calf_joint": viscous_friction[2], "FR_calf_joint": viscous_friction[5], "RL_calf_joint": viscous_friction[8], "RR_calf_joint": viscous_friction[11]},  # viscous friction coefficient (Nm s/rad)
     armature={"FL_calf_joint": armature[2], "FR_calf_joint": armature[5], "RL_calf_joint": armature[8], "RR_calf_joint": armature[11]},
-    max_delay=1,  # max delay in simulation steps
+    max_delay=delay,  # max delay in simulation steps
 )
 
 GO2_CFG = ArticulationCfg(
