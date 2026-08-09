@@ -94,6 +94,15 @@ class EventCfg:
             "distribution": "uniform",
         },
     )
+
+    randomize_pace_actuator_delay = EventTerm(
+        func=custom_events.randomize_pace_actuator_delay,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=[".*"]),
+            "min_delay": 0,
+        },
+    )
     
     # interval
     push_robot = EventTerm(
