@@ -7,9 +7,6 @@
     <img src="./gifs/sim-to-sim.gif" alt="Sim-to-Sim" width="32%">
     <img src="./gifs/sim-to-real.gif" alt="Sim-to-Real" width="32%">
   </div>
-  <div style="display: flex; justify-content: space-around;">
-    <img src="./gifs/go2-vision.gif" alt="Train" width="96%">
-  </div>
 </div>
 
 ## Overview
