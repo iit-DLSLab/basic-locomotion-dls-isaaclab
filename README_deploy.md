@@ -6,10 +6,10 @@
 
 
 ```bash
-conda env create -f deploy/installation/mamba_environment_lyrical.yaml
+conda env create -f deploy/installation/mamba_environment_humble.yaml
 conda activate basic_locomotion_isaaclab_env
 
-conda env create -f deploy/installation/mamba_environment_humble.yaml
+conda env create -f deploy/installation/mamba_environment_lyrical.yaml
 conda activate basic_locomotion_isaaclab_env
 
 pixi install --manifest-path deploy/installation/pixi.toml -e humble
