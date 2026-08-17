@@ -25,7 +25,7 @@ pixi shell --manifest-path deploy/installation/pixi.toml -e lyrical
 
 ## Run Sim-to-Sim 
 
-Choose in deploy/config.py the robot/policy you want to run. Then:
+Choose in deploy/config.py the robot/policy you want to run. **Activate your environment conda/pixi**. Then:
 
 ```bash
 ## Sim-to-Sim
