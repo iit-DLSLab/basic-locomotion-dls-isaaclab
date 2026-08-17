@@ -46,7 +46,7 @@ ros2 launch teleop_twist_joy teleop-launch.py joy_config:='xbox' (if want joysti
 
 ## Run Sim-to-Real
 
-Choose in deploy/config.py the robot/policy you want to run. This script matches well with the repo [unitree-ros2-dls](https://github.com/iit-DLSLab/unitree_ros2_dls/tree/main) that you can use to control unitree go2/and soon a2. **If you use it, remember to source first ros2_connect.sh in every terminal.**
+Choose in deploy/config.py the robot/policy you want to run. **Activate your environment conda/pixi**. This script matches well with the repo [unitree-ros2-dls](https://github.com/iit-DLSLab/unitree_ros2_dls/tree/main) that you can use to control unitree go2/and soon a2. **If you use it, remember to source first unitree_ros2_connect.bash in every terminal.**
 
 ```bash
 ## Sim-to-Real with ROS2
