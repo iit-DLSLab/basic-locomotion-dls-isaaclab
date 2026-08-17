@@ -1,0 +1,32 @@
+name: basic_locomotion_isaaclab_env
+# Force ROS 2 to use localhost at startup for safety.
+# This value can still be overridden after activating the environment.
+variables:
+  ROS_LOCALHOST_ONLY: "1"
+channels:
+- conda-forge
+- nvidia
+- robostack-lyrical
+dependencies:
+- pip
+- python
+- numpy
+- cuda-nvcc 
+- ros-lyrical-desktop
+- ros-lyrical-rmw-cyclonedds-cpp
+- ros-lyrical-plotjuggler-ros
+- compilers 
+- cmake 
+- pkg-config 
+- make 
+- ninja 
+- colcon-common-extensions 
+- catkin_tools 
+- rosdep
+- tqdm
+- gymnasium
+- pip:
+  - readchar
+  - onnxruntime
+  - torch
+  - gym-quadruped

@@ -1,0 +1,53 @@
+[workspace]
+name = "basic_locomotion_isaaclab_env"
+platforms = ["linux-64"]
+channels = ["conda-forge", "nvidia"]
+
+[feature.common.dependencies]
+pip = "*"
+python = "*"
+numpy = "*"
+cuda-nvcc = "*"
+compilers = "*"
+cmake = "*"
+pkg-config = "*"
+make = "*"
+ninja = "*"
+colcon-common-extensions = "*"
+catkin_tools = "*"
+rosdep = "*"
+tqdm = "*"
+gymnasium = "*"
+
+[feature.common.pypi-dependencies]
+readchar = "*"
+onnxruntime = "*"
+torch = "*"
+gym-quadruped = "*"
+
+[feature.common.activation.env]
+ROS_LOCALHOST_ONLY = "1"
+
+[feature.humble]
+channels = ["https://repo.prefix.dev/robostack-staging"]
+
+[feature.humble.dependencies]
+ros-humble-desktop = "*"
+ros-humble-rmw-cyclonedds-cpp = "*"
+ros-humble-rosidl-generator-dds-idl = "*"
+ros-humble-plotjuggler-ros = "*"
+ros-humble-librealsense2 = "*"
+ros-humble-realsense2-camera-msgs = "*"
+ros-humble-realsense2-camera = "*"
+
+[feature.lyrical]
+channels = ["https://repo.prefix.dev/robostack-lyrical"]
+
+[feature.lyrical.dependencies]
+ros-lyrical-desktop = "*"
+ros-lyrical-rmw-cyclonedds-cpp = "*"
+ros-lyrical-plotjuggler-ros = "*"
+
+[environments]
+humble = ["common", "humble"]
+lyrical = ["common", "lyrical"]
