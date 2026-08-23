@@ -405,7 +405,7 @@ from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 class Go2RoughBlindEnvCfg(Go2FlatEnvCfg):
 
     ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
-        curriculum=True,
+        curriculum=False,
         size=(8.0, 8.0),
         border_width=20.0,
         num_rows=10,
