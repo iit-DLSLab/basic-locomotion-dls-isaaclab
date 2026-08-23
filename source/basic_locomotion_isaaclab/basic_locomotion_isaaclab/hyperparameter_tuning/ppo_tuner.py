@@ -39,11 +39,7 @@ Usage:
 
 .. code-block:: bash
 
-    # How to run a tuning job
-    (TERMINAL 1)
-    echo "import ray; ray.init(); import time; [time.sleep(10) for _ in iter(int, 1)]" | ./../IsaacLab/isaaclab.sh -p
-    
-    (TERMINAL 2)
+    # Local mode starts its own Ray runtime.
     python source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/ppo_tuner.py \
         --run_mode local \
         --cfg_file source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/ppo_tuning_cfg.py \
@@ -169,13 +165,6 @@ def invoke_tuning_run(cfg: dict, args: argparse.Namespace) -> None:
     resources = util.get_gpu_node_resources(ray_address=args.ray_address)
     print(f"[INFO]: Available resources {resources}")
 
-    if not ray.is_initialized():
-        ray.init(
-            address=args.ray_address,
-            log_to_driver=True,
-            num_gpus=len(resources),
-        )
-
     print(f"[INFO]: Using config {cfg}")
 
     # Configure the search algorithm and the repeater
@@ -237,7 +226,12 @@ def invoke_tuning_run(cfg: dict, args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tune PPO hyperparameters with Ray Tune.")
-    parser.add_argument("--ray_address", type=str, default="auto", help="the Ray address.")
+    parser.add_argument(
+        "--ray_address",
+        type=str,
+        default=None,
+        help="Ray cluster address. Omit to start Ray locally; remote mode defaults to 'auto'.",
+    )
     parser.add_argument(
         "--cfg_file",
         type=str,
@@ -299,6 +293,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    if args.ray_address is None and args.run_mode == "remote":
+        args.ray_address = "auto"
     NUM_WORKERS_PER_NODE = args.num_workers_per_node
     print(f"[INFO]: Using {NUM_WORKERS_PER_NODE} workers per node.")
     if args.run_mode == "remote":

@@ -12,11 +12,7 @@ handling from becoming coupled to the PPO/Hydra tuning path.
 Example:
 
 .. code-block:: bash
-    # How to run a tuning job
-    (TERMINAL 1)
-    echo "import ray; ray.init(); import time; [time.sleep(10) for _ in iter(int, 1)]" | ./../IsaacLab/isaaclab.sh -p
-    
-    (TERMINAL 2)
+    # Local mode starts its own Ray runtime.
     python source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/flashsac_tuner.py \
         --run_mode local \
         --cfg_file source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/flashsac_tuning_cfg.py \
@@ -218,7 +214,12 @@ def main() -> None:
     global BASE_DIR, NUM_WORKERS_PER_NODE, WORKFLOW
 
     parser = argparse.ArgumentParser(description="Tune FlashSAC hyperparameters with Ray Tune.")
-    parser.add_argument("--ray_address", type=str, default="auto", help="Ray cluster address.")
+    parser.add_argument(
+        "--ray_address",
+        type=str,
+        default=None,
+        help="Ray cluster address. Omit to start Ray locally; remote mode defaults to 'auto'.",
+    )
     parser.add_argument("--cfg_file", type=str, required=True, help="Python file defining the FlashSAC sweep.")
     parser.add_argument("--cfg_class", type=str, required=True, help="FlashSAC sweep class to instantiate.")
     parser.add_argument("--run_mode", choices=["local", "remote"], default="local")
@@ -230,6 +231,9 @@ def main() -> None:
     parser.add_argument("--num_samples", type=int, default=20)
     parser.add_argument("--repeat_run_count", type=int, default=1)
     args = parser.parse_args()
+
+    if args.ray_address is None and args.run_mode == "remote":
+        args.ray_address = "auto"
 
     if args.num_workers_per_node < 1:
         parser.error("--num_workers_per_node must be at least 1.")

@@ -264,7 +264,7 @@ def get_gpu_node_resources(
     one_node_only: bool = False,
     include_gb_ram: bool = False,
     include_id: bool = False,
-    ray_address: str = "auto",
+    ray_address: str | None = "auto",
 ) -> list[dict] | dict:
     """Get information about available GPU node resources.
 
@@ -273,7 +273,7 @@ def get_gpu_node_resources(
         one_node_only: When true, return resources for a single node. Defaults to False.
         include_gb_ram: Set to true to convert MB to GB in result
         include_id: Set to true to include node ID
-        ray_address: The ray address to connect to.
+        ray_address: The Ray address to connect to. ``None`` starts a local Ray runtime.
 
     Returns:
         Resource information for all nodes, sorted by descending GPU count, then descending CPU

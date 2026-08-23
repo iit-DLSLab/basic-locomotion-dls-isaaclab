@@ -47,6 +47,7 @@ Both tuners log each trial to W&B while retaining local TensorBoard event files
 for Ray Tune metric collection. Authenticate once with `wandb login` before
 starting a sweep.
 
+Before proceeding, install this dependencies in your isaaclab env:
 ```bash
 pip install pyarrow
 pip install optuna
@@ -55,9 +56,8 @@ pip install optuna
 
 ### PPO
 
-```bash
-echo "import ray; ray.init(); import time; [time.sleep(10) for _ in iter(int, 1)]" | python3 (TERMINAL 1)
-```
+In local mode, the tuner starts and owns the local Ray runtime; no separate Ray
+process is needed.
 
 ```bash
 python source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/ppo_tuner.py \
@@ -78,3 +78,6 @@ python source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter
   --cfg_class LocomotionGo2RoughVisionFlashSACTuner \
   --num_samples 20
 ```
+
+Pass `--ray_address auto` (or an explicit Ray address) only when connecting to
+an already-running cluster.
