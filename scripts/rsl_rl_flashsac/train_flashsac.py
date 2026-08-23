@@ -18,8 +18,58 @@ Usage (from an environment with Isaac Lab installed):
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 from datetime import datetime
+
+
+def _parse_agent_override_value(raw_value: str):
+    """Parse a command-line agent override while preserving unquoted strings."""
+    try:
+        return ast.literal_eval(raw_value)
+    except (SyntaxError, ValueError):
+        return raw_value
+
+
+def apply_agent_cfg_overrides(agent_cfg, overrides: list[str]) -> None:
+    """Apply dotted ``agent.<path>=<value>`` overrides to an agent config.
+
+    This lets Ray Tune vary nested actor, critic, runner, and algorithm settings.
+    Unknown paths are rejected so a misspelled sweep parameter cannot be ignored.
+    """
+    for override in overrides:
+        if "=" not in override:
+            raise ValueError(f"Invalid agent override '{override}': expected agent.<path>=<value>.")
+
+        key, raw_value = override.split("=", maxsplit=1)
+        if not key.startswith("agent."):
+            raise ValueError(f"Invalid agent override '{override}': keys must start with 'agent.'.")
+
+        path = key.removeprefix("agent.").split(".")
+        if not all(path):
+            raise ValueError(f"Invalid agent override '{override}': the configuration path is empty.")
+
+        target = agent_cfg
+        for part in path[:-1]:
+            if isinstance(target, dict):
+                if part not in target:
+                    raise ValueError(f"Unknown agent configuration path '{key}'.")
+                target = target[part]
+            else:
+                if not hasattr(target, part):
+                    raise ValueError(f"Unknown agent configuration path '{key}'.")
+                target = getattr(target, part)
+
+        leaf = path[-1]
+        value = _parse_agent_override_value(raw_value)
+        if isinstance(target, dict):
+            if leaf not in target:
+                raise ValueError(f"Unknown agent configuration path '{key}'.")
+            target[leaf] = value
+        else:
+            if not hasattr(target, leaf):
+                raise ValueError(f"Unknown agent configuration path '{key}'.")
+            setattr(target, leaf, value)
 
 
 def main() -> None:
@@ -55,6 +105,12 @@ def main() -> None:
     )
     # AppLauncher consumes this to bind each rank to cuda:{LOCAL_RANK} (launch via torchrun)
     parser.add_argument("--distributed", action="store_true", help="Run distributed data-parallel training.")
+    parser.add_argument(
+        "agent_overrides",
+        nargs="*",
+        metavar="agent.<path>=<value>",
+        help="Nested FlashSAC agent overrides used by hyperparameter sweeps.",
+    )
     AppLauncher.add_app_launcher_args(parser)
     args_cli = parser.parse_args()
 
@@ -78,6 +134,10 @@ def main() -> None:
 
     # Resolve the agent configuration and apply CLI overrides
     agent_cfg = get_task_cfg(args_cli.task)
+    try:
+        apply_agent_cfg_overrides(agent_cfg, args_cli.agent_overrides)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args_cli.seed is not None:
         agent_cfg.seed = args_cli.seed
     if args_cli.max_iterations is not None:
@@ -113,10 +173,31 @@ def main() -> None:
         torch.backends.cudnn.benchmark = True
         torch.set_float32_matmul_precision("high")
 
-    # Build the environment
+    # Build the environment configuration
     env_cfg = parse_env_cfg(args_cli.task, device=agent_cfg.device, num_envs=args_cli.num_envs)
     env_cfg.seed = agent_cfg.seed
     apply_motion_files(env_cfg, args_cli.motion_files)
+
+    # Logging directory and config dumps (reproducibility) — rank 0 only in distributed
+    # runs; the rsl_rl Logger disables all writers and checkpoint saves on other ranks.
+    log_dir = None
+    if not args_cli.distributed or app_launcher.global_rank == 0:
+        # Include microseconds because Ray can launch multiple trials in the same second.
+        run_stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
+        if agent_cfg.run_name:
+            run_stamp += f"_{agent_cfg.run_name}"
+        # Seed in the dir name: same-second launches of one task must not share a dir
+        run_stamp += f"_s{agent_cfg.seed}"
+        log_root_path = os.path.abspath(os.path.join("logs", "flashsac", agent_cfg.experiment_name))
+        log_dir = os.path.join(log_root_path, run_stamp)
+        # These two lines form the log-discovery interface used by the Ray tuner.
+        print(f"[INFO] Logging experiment in directory: {log_root_path}", flush=True)
+        print(f"Exact experiment name requested from command line: {run_stamp}", flush=True)
+        os.makedirs(log_dir, exist_ok=False)
+        dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
+        dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
+
+    # Build the environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode=None)
     env = FlashSACVecEnvWrapper(
         env,
@@ -124,20 +205,6 @@ def main() -> None:
         action_bound=agent_cfg.action_bound,
         action_bound_scale=agent_cfg.action_bound_scale,
     )
-
-    # Logging directory and config dumps (reproducibility) — rank 0 only in distributed
-    # runs; the rsl_rl Logger disables all writers and checkpoint saves on other ranks.
-    log_dir = None
-    if not args_cli.distributed or app_launcher.global_rank == 0:
-        run_stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        if agent_cfg.run_name:
-            run_stamp += f"_{agent_cfg.run_name}"
-        # Seed in the dir name: same-second launches of one task must not share a dir
-        run_stamp += f"_s{agent_cfg.seed}"
-        log_dir = os.path.join("logs", "flashsac", agent_cfg.experiment_name, run_stamp)
-        os.makedirs(log_dir, exist_ok=False)
-        dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
-        dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
 
     # Train
     train_cfg = agent_cfg.to_dict()  # type: ignore[attr-defined]

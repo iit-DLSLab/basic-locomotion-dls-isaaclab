@@ -5,7 +5,9 @@
 import argparse
 import importlib.util
 import os
+import subprocess
 import sys
+from pathlib import Path
 from time import sleep
 
 import ray
@@ -15,7 +17,7 @@ from ray.tune.search.optuna import OptunaSearch
 from ray.tune.search.repeater import Repeater
 
 """
-This script breaks down an aggregate tuning job, as defined by a hyperparameter sweep configuration,
+This script breaks down a PPO tuning job, as defined by a hyperparameter sweep configuration,
 into individual jobs (shell commands) to run on the GPU-enabled nodes of the cluster.
 By default, one worker is created for each GPU-enabled node in the cluster for each individual job.
 To use more than one worker per node (likely the case for multi-GPU machines), supply the
@@ -42,42 +44,55 @@ Usage:
     echo "import ray; ray.init(); import time; [time.sleep(10) for _ in iter(int, 1)]" | ./../IsaacLab/isaaclab.sh -p
     
     (TERMINAL 2)
-    python3 ../basic_locomotion_isaaclab/exts/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/tuner.py \
-        --run_mode local --cfg_file ../basic_locomotion_isaaclab/exts/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/locomotion_tuning_cfg.py \
-        --cfg_class LocomotionAliengoFlatTuner \
-        --workflow ../basic_locomotion_isaaclab/scripts/rsl_rl/train.py \
+    python source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/ppo_tuner.py \
+        --run_mode local \
+        --cfg_file source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/ppo_tuning_cfg.py \
+        --cfg_class LocomotionAliengoFlatPPOTuner \
         --metric Train/mean_reward
 
 """
 
 DOCKER_PREFIX = "/workspace/isaaclab/"
-BASE_DIR = os.path.expanduser("~")
-#PYTHON_EXEC = "./isaaclab.sh -p"
-#WORKFLOW = "source/standalone/workflows/rl_games/train.py"
-PYTHON_EXEC = "python3" #Modified by me
-WORKFLOW = "scripts/rsl_rl/train.py" #Modified by me
+REPO_ROOT = Path(__file__).resolve().parents[4]
+BASE_DIR = str(REPO_ROOT)
+PYTHON_EXEC = "python3"
+WORKFLOW = str(REPO_ROOT / "scripts" / "rsl_rl" / "train.py")
 NUM_WORKERS_PER_NODE = 1  # needed for local parallelism
 
 
-class IsaacLabTuneTrainable(tune.Trainable):
-    """The Isaac Lab Ray Tune Trainable.
+class PPOTuneTrainable(tune.Trainable):
+    """The PPO Ray Tune Trainable.
     This class uses the standalone workflows to start jobs, along with the hydra integration.
     This class achieves Ray-based logging through reading the tensorboard logs from
-    the standalone workflows. This depends on a config generated in the format of
-    :class:`JobCfg`
+    the standalone workflows.
     """
 
     def setup(self, config: dict) -> None:
         """Get the invocation command, return quick for easy scheduling."""
         self.data = None
+        self.proc = None
         self.invoke_cmd = util.get_invocation_command_from_cfg(cfg=config, python_cmd=PYTHON_EXEC, workflow=WORKFLOW)
         print(f"[INFO]: Recovered invocation with {self.invoke_cmd}")
         self.experiment = None
 
-    def reset_config(self, new_config: dict):
+    def reset_config(self, new_config: dict) -> bool:
         """Allow environments to be re-used by fetching a new invocation command"""
+        self.cleanup()
         self.setup(new_config)
         return True
+
+    def _completed_result(self, return_code: int) -> dict:
+        """Return final metrics or surface a failed PPO subprocess."""
+        if return_code != 0:
+            details = "".join(self.experiment.get("result_details", []))
+            raise RuntimeError(
+                f"PPO trial exited with status {return_code}: {self.invoke_cmd}\n"
+                f"Subprocess output:\n{details[-10_000:]}"
+            )
+
+        final_data = util.load_tensorboard_logs(self.tensorboard_logdir)
+        self.data = final_data or self.data or {}
+        return {**self.data, "done": True}
 
     def step(self) -> dict:
         if self.experiment is None:  # start experiment
@@ -86,39 +101,43 @@ class IsaacLabTuneTrainable(tune.Trainable):
             print(f"[INFO]: Invoking experiment as first step with {self.invoke_cmd}...")
             experiment = util.execute_job(
                 self.invoke_cmd,
-                identifier_string="",
+                identifier_string="ppo",
                 extract_experiment=True,
                 persistent_dir=BASE_DIR,
+                log_all_output=True,
             )
-            self.experiment = experiment
             print(f"[INFO]: Tuner recovered experiment info {experiment}")
-            self.proc = experiment["proc"]
-            self.experiment_name = experiment["experiment_name"]
-            self.isaac_logdir = experiment["logdir"]
-            self.tensorboard_logdir = self.isaac_logdir + "/" + self.experiment_name
-            self.done = False
+            if not isinstance(experiment, dict):
+                raise RuntimeError(f"PPO trial ended before its log directory was discovered:\n{experiment}")
 
-        if self.proc is None:
-            raise ValueError("Could not start trial.")
-        proc_status = self.proc.poll()
-        if proc_status is not None:  # process finished, signal finish
-            self.data["done"] = True
-            print(f"[INFO]: Process finished with {proc_status}, returning...")
-        else:  # wait until the logs are ready or fresh
+            self.experiment = experiment
+            self.proc = experiment["proc"]
+            self.tensorboard_logdir = os.path.join(experiment["logdir"], experiment["experiment_name"])
+
+        return_code = self.proc.poll()
+        if return_code is not None:
+            return self._completed_result(return_code)
+
+        data = util.load_tensorboard_logs(self.tensorboard_logdir)
+        while not data or (self.data is not None and util._dicts_equal(data, self.data)):
+            return_code = self.proc.poll()
+            if return_code is not None:
+                return self._completed_result(return_code)
+            sleep(2)
             data = util.load_tensorboard_logs(self.tensorboard_logdir)
 
-            while data is None:
-                data = util.load_tensorboard_logs(self.tensorboard_logdir)
-                sleep(2)  # Lazy report metrics to avoid performance overhead
+        self.data = data
+        return {**self.data, "done": False}
 
-            if self.data is not None:
-                while util._dicts_equal(data, self.data):
-                    data = util.load_tensorboard_logs(self.tensorboard_logdir)
-                    sleep(2)  # Lazy report metrics to avoid performance overhead
-
-            self.data = data
-            self.data["done"] = False
-        return self.data
+    def cleanup(self) -> None:
+        """Stop a child PPO process when Ray stops or reuses its actor."""
+        if self.proc is not None and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait()
 
     def default_resource_request(self):
         """How many resources each trainable uses. Assumes homogeneous resources across gpu nodes,
@@ -133,7 +152,7 @@ class IsaacLabTuneTrainable(tune.Trainable):
 
 
 def invoke_tuning_run(cfg: dict, args: argparse.Namespace) -> None:
-    """Invoke an Isaac-Ray tuning run.
+    """Invoke a PPO Ray Tune run.
 
     Log either to a local directory or to MLFlow.
     Args:
@@ -147,7 +166,7 @@ def invoke_tuning_run(cfg: dict, args: argparse.Namespace) -> None:
     print("[INFO]: Model parameters and metrics will be preserved.")
     print("[WARNING]: For homogeneous cluster resources only...")
     # Get available resources
-    resources = util.get_gpu_node_resources()
+    resources = util.get_gpu_node_resources(ray_address=args.ray_address)
     print(f"[INFO]: Available resources {resources}")
 
     if not ray.is_initialized():
@@ -169,7 +188,7 @@ def invoke_tuning_run(cfg: dict, args: argparse.Namespace) -> None:
     if args.run_mode == "local":  # Standard config, to file
         run_config = air.RunConfig(
             storage_path="/tmp/ray",
-            name=f"IsaacRay-{args.cfg_class}-tune",
+            name=f"PPO-{args.cfg_class}-tune",
             verbose=1,
             checkpoint_config=air.CheckpointConfig(
                 checkpoint_frequency=0,  # Disable periodic checkpointing
@@ -180,7 +199,7 @@ def invoke_tuning_run(cfg: dict, args: argparse.Namespace) -> None:
     elif args.run_mode == "remote":  # MLFlow, to MLFlow server
         mlflow_callback = MLflowLoggerCallback(
             tracking_uri=args.mlflow_uri,
-            experiment_name=f"IsaacRay-{args.cfg_class}-tune",
+            experiment_name=f"PPO-{args.cfg_class}-tune",
             save_artifact=False,
             tags={"run_mode": "remote", "cfg_class": args.cfg_class},
         )
@@ -196,7 +215,7 @@ def invoke_tuning_run(cfg: dict, args: argparse.Namespace) -> None:
 
     # Configure the tuning job
     tuner = tune.Tuner(
-        IsaacLabTuneTrainable,
+        PPOTuneTrainable,
         param_space=cfg,
         tune_config=tune.TuneConfig(
             search_alg=repeat_search,
@@ -216,45 +235,20 @@ def invoke_tuning_run(cfg: dict, args: argparse.Namespace) -> None:
         print("[DONE!]: Check results with MLFlow dashboard")
 
 
-class JobCfg:
-    """To be compatible with :meth: invoke_tuning_run and :class:IsaacLabTuneTrainable,
-    at a minimum, the tune job should inherit from this class."""
-
-    def __init__(self, cfg: dict):
-        """
-        Runner args include command line arguments passed to the task.
-        For example:
-        cfg["runner_args"]["headless_singleton"] = "--headless"
-        cfg["runner_args"]["enable_cameras_singleton"] = "--enable_cameras"
-        """
-        assert "runner_args" in cfg, "No runner arguments specified."
-        """
-        Task is the desired task to train on. For example:
-        cfg["runner_args"]["--task"] = tune.choice(["Isaac-Cartpole-RGB-TheiaTiny-v0"])
-        """
-        assert "--task" in cfg["runner_args"], "No task specified."
-        """
-        Hydra args define the hyperparameters varied within the sweep. For example:
-        cfg["hydra_args"]["agent.params.network.cnn.activation"] = tune.choice(["relu", "elu"])
-        """
-        assert "hydra_args" in cfg, "No hyperparameters specified."
-        self.cfg = cfg
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Tune Isaac Lab hyperparameters.")
+    parser = argparse.ArgumentParser(description="Tune PPO hyperparameters with Ray Tune.")
     parser.add_argument("--ray_address", type=str, default="auto", help="the Ray address.")
     parser.add_argument(
         "--cfg_file",
         type=str,
-        default="hyperparameter_tuning/vision_cartpole_cfg.py",
+        default=os.path.join(os.path.dirname(__file__), "ppo_tuning_cfg.py"),
         required=False,
         help="The relative filepath where a hyperparameter sweep is defined",
     )
     parser.add_argument(
         "--cfg_class",
         type=str,
-        default="CartpoleRGBNoTuneJobCfg",
+        default="LocomotionGo2FlatPPOTuner",
         required=False,
         help="Name of the hyperparameter sweep class to use",
     )
@@ -262,15 +256,12 @@ if __name__ == "__main__":
         "--run_mode",
         choices=["local", "remote"],
         default="remote",
-        help=(
-            "Set to local to use ./isaaclab.sh -p python, set to "
-            "remote to use /workspace/isaaclab/isaaclab.sh -p python"
-        ),
+        help="Run locally or use paths rooted at /workspace/isaaclab on remote workers.",
     )
     parser.add_argument(
         "--workflow",
-        default=None,  # populated with RL Games
-        help="The absolute path of the workflow to use for the experiment. By default, RL Games is used.",
+        default=None,
+        help="Override the PPO training workflow path. Defaults to scripts/rsl_rl/train.py.",
     )
     parser.add_argument(
         "--mlflow_uri",
@@ -286,7 +277,7 @@ if __name__ == "__main__":
         help="Number of workers to run on each GPU node. Only supply for parallelism on multi-gpu nodes",
     )
 
-    parser.add_argument("--metric", type=str, default="rewards/time", help="What metric to tune for.")
+    parser.add_argument("--metric", type=str, default="Train/mean_reward", help="What metric to tune for.")
 
     parser.add_argument(
         "--mode",
@@ -312,9 +303,8 @@ if __name__ == "__main__":
     print(f"[INFO]: Using {NUM_WORKERS_PER_NODE} workers per node.")
     if args.run_mode == "remote":
         BASE_DIR = DOCKER_PREFIX  # ensure logs are dumped to persistent location
-        PYTHON_EXEC = DOCKER_PREFIX + PYTHON_EXEC[2:]
         if args.workflow is None:
-            WORKFLOW = DOCKER_PREFIX + WORKFLOW
+            WORKFLOW = os.path.join(DOCKER_PREFIX, "scripts", "rsl_rl", "train.py")
         else:
             WORKFLOW = args.workflow
         print(f"[INFO]: Using remote mode {PYTHON_EXEC=} {WORKFLOW=}")
@@ -327,12 +317,14 @@ if __name__ == "__main__":
         else:
             raise ValueError("Please provide a result MLFLow URI server.")
     else:  # local
-        #PYTHON_EXEC = os.getcwd() + "/" + PYTHON_EXEC[2:] #Modified by me
-        if args.workflow is None:
-            WORKFLOW = os.getcwd() + "/" + WORKFLOW
-        else:
-            WORKFLOW = args.workflow
-        BASE_DIR = os.getcwd()
+        BASE_DIR = str(REPO_ROOT)
+        workflow_path = Path(args.workflow).expanduser() if args.workflow else REPO_ROOT / "scripts/rsl_rl/train.py"
+        if not workflow_path.is_absolute():
+            workflow_path = Path.cwd() / workflow_path
+        workflow_path = workflow_path.resolve()
+        if not workflow_path.is_file():
+            parser.error(f"PPO workflow does not exist: {workflow_path}. Omit --workflow to use the repository default.")
+        WORKFLOW = str(workflow_path)
         print(f"[INFO]: Using local mode {PYTHON_EXEC=} {WORKFLOW=}")
     file_path = args.cfg_file
     class_name = args.cfg_class

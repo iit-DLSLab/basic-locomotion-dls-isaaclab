@@ -218,7 +218,7 @@ class FlashSACRunnerCfg:
     """The run name suffix."""
 
     logger: str | dict = field(
-        default_factory=lambda: {"class_name": "WandbLogWriter", "project_name": "rsl_rl_flashsac"}
+        default_factory=lambda: {"class_name": "WandbLogWriter", "project_name": "basic-locomotion"}
     )
     """The logging backend: "tensorboard" or a LogWriter dict, e.g.
     ``{"class_name": "WandbLogWriter", "project_name": "flashsac"}`` (entity via

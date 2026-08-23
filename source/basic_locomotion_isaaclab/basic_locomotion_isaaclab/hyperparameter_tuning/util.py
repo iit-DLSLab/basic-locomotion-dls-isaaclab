@@ -205,6 +205,12 @@ def execute_job(
                 if log_all_output:
                     print(f"{identifier_string}: {line}")
 
+        # Drain stderr immediately. A process can fail before printing its log directory,
+        # and leaving stderr unread both hides the cause and can fill the pipe.
+        stderr_thread = threading.Thread(target=stream_reader, args=(process.stderr, identifier_string, result_details))
+        stderr_thread.daemon = True
+        stderr_thread.start()
+
         # Read stdout until we find experiment info
         # Do some careful handling prevent overflowing the pipe reading buffer with error 141
         for line in iter(process.stdout.readline, ""):
@@ -227,13 +233,6 @@ def execute_job(
                     logdir = log_match.group(1)
 
                 if experiment_name and logdir:
-                    # Start stderr reader after finding experiment info
-                    stderr_thread = threading.Thread(
-                        target=stream_reader, args=(process.stderr, identifier_string, result_details)
-                    )
-                    stderr_thread.daemon = True
-                    stderr_thread.start()
-
                     # Start stdout reader to continue reading to flush buffer
                     stdout_thread = threading.Thread(
                         target=stream_reader, args=(process.stdout, identifier_string, result_details)
@@ -246,10 +245,15 @@ def execute_job(
                         "logdir": logdir,
                         "proc": process,
                         "result": " ".join(result_details),
+                        "result_details": result_details,
                     }
         process.wait()
+        stderr_thread.join(timeout=2)
         now = datetime.now().strftime("%H:%M:%S.%f")
-        completion_info = f"\n[INFO]: {identifier_string}: Job Started at {start_time}, completed at {now}\n"
+        completion_info = (
+            f"\n[INFO]: {identifier_string}: Job Started at {start_time}, completed at {now} "
+            f"with exit status {process.returncode}\n"
+        )
         print(completion_info)
         result_details.append(completion_info)
         return " ".join(result_details)
