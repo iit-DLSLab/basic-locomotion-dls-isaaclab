@@ -302,20 +302,17 @@ def get_task_cfg(task_name: str) -> FlashSACRunnerCfg:
 @configclass
 class LocomotionGo2FlatFlashSACCfg(FlashSACRunnerCfg):
     task_name: str = "Locomotion-Go2-Flat"
-    save_interval = 50
     action_bound_scale: float = 3.0
 
 @register_task
 @configclass
 class LocomotionGo2RoughBlindFlashSACCfg(FlashSACRunnerCfg):
     task_name: str = "Locomotion-Go2-Rough-Blind"
-    save_interval = 50
     action_bound_scale: float = 3.0
 
 @register_task
 @configclass
 class LocomotionGo2RoughVisionFlashSACCfg(FlashSACRunnerCfg):
     task_name: str = "Locomotion-Go2-Rough-Vision"
-    save_interval = 50
     action_bound_scale: float = 3.0
     
