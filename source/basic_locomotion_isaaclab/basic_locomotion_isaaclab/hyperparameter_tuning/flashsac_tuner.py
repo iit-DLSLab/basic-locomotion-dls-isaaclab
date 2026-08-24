@@ -17,7 +17,7 @@ Example:
         --run_mode local \
         --cfg_file source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/flashsac_tuning_cfg.py \
         --cfg_class LocomotionGo2RoughVisionFlashSACTuner \
-        --num_samples 20
+        --num_samples 40
 """
 
 from __future__ import annotations

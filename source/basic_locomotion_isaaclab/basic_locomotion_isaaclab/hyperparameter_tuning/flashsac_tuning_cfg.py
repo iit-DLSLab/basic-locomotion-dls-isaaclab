@@ -29,15 +29,15 @@ class FlashSACJobCfg:
         # WandbLogWriter mirrors metrics to local TensorBoard event files for Ray.
         cfg["agent_args"]["agent.logger"] = {
             "class_name": "WandbLogWriter",
-            "project_name": "basic-locomotion-flashsac-tuning",
+            "project_name": "basic-locomotion",
         }
-        cfg["agent_args"]["agent.max_iterations"] = 10_000
+        cfg["agent_args"]["agent.max_iterations"] = 60_000
         cfg["agent_args"]["agent.log_interval"] = 20
         # Keep only the runner's final checkpoint during short-lived tuning trials.
-        cfg["agent_args"]["agent.save_interval"] = 10_000
+        cfg["agent_args"]["agent.save_interval"] = 60_000
 
         if vary_env_count:
-            cfg["runner_args"]["--num_envs"] = tune.choice([2048])
+            cfg["runner_args"]["--num_envs"] = tune.choice([1024])
 
         if vary_network:
             cfg["agent_args"]["agent.actor.num_blocks"] = tune.choice([1, 2, 3])
@@ -51,7 +51,7 @@ class FlashSACJobCfg:
             cfg["agent_args"]["agent.algorithm.learning_rate_peak"] = tune.choice([1.5e-4, 3.0e-4, 6.0e-4])
             cfg["agent_args"]["agent.algorithm.actor_update_period"] = tune.choice([1, 2, 4])
             cfg["agent_args"]["agent.algorithm.critic_target_update_tau"] = tune.choice([0.005, 0.01, 0.02])
-            cfg["agent_args"]["agent.algorithm.temp_initial_value"] = tune.choice([0.001, 0.01, 0.1])
+            cfg["agent_args"]["agent.algorithm.temp_initial_value"] = tune.choice([0.01, 0.05, 0.1])
             cfg["agent_args"]["agent.algorithm.temp_target_sigma"] = tune.choice([0.1, 0.15, 0.2])
             cfg["agent_args"]["agent.algorithm.gamma"] = tune.choice([0.97, 0.99, 0.995])
             cfg["agent_args"]["agent.algorithm.n_steps"] = tune.choice([1, 3, 5])
