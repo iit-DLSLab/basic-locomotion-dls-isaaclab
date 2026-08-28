@@ -24,7 +24,7 @@ elif(robot == "go2"):
     Kp_stand_up_and_down = 50.
     Kd_stand_up_and_down = 5.
 
-    policy_folder_path = dir_path + "/../tested_policies/" + robot + "/2026-08-23_14-47-34_flashsac_locomotion_go2_rough_vision_s0"
+    policy_folder_path = dir_path + "/../tested_policies/" + robot + "/concurrent_symm"
 
 elif(robot == "b2"):
     Kp_walking = 100.

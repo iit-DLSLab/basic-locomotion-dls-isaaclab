@@ -464,10 +464,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
     runner.load(policy_checkpoint)
     policy = runner.get_inference_policy(device=env.unwrapped.device)
-    # version 2.3 onwards uses `policy`, version 2.2 and below `actor_critic`, rsl-rl >= 5.0 `actor`.
-    policy_nn = getattr(
-        runner.alg, "policy", getattr(runner.alg, "actor_critic", getattr(runner.alg, "actor", None))
-    )
 
     terrain_model.to(env.unwrapped.device)
     terrain_model.eval()
@@ -516,8 +512,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             actions = policy(obs)
             obs, _, dones, _ = env.step(actions)
             dones = dones.bool()
-            if policy_nn is not None and hasattr(policy_nn, "reset"):
-                policy_nn.reset(dones)
+            if hasattr(policy, "reset"):
+                policy.reset(dones)
 
             current_lidar = lidar_sampler.step(dones=dones)
             valid_history_lengths[dones] = 0
