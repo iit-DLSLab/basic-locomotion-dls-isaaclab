@@ -5,7 +5,7 @@ from dataclasses import MISSING
 
 @configclass
 class MorphologycalSymmetriesCfg:
-    """Configuration for using morphosymm-rl."""
+    """Configuration for using morphosymm-rsl-rl."""
 
     class_name: str = "MorphologycalSymmetries"
     """The class name."""
@@ -25,9 +25,18 @@ class MorphologycalSymmetriesCfg:
     robot_name = None
     """The name of the robot to use inside Morphosymm."""
 
-    schedule_fixed_to_adaptive_switch = None
-    """The number of iterations to switch from fixed to adaptive schedule for the symmetry loss. 
-    If None, then no switch will happen. If the scheduler is set to adaptive, not change will be made."""
+    state_dependent_std = False
+    """Whether the actor emits its action covariance directly, instead of learning a fixed one."""
+
+    small_init_output = True
+    """Whether to start the actor mean and the critic value with small (near-zero) initial outputs."""
+
+    symmetric_initialization = True
+    """Whether to project the actor/critic initial weights onto the symmetry-equivariant subspace."""
+
+    use_data_augmentation = True
+    """Whether to augment the rollout storage with every symmetry-group replica of each collected transition
+    (selects PPOSymmDataAugmented). If False, uses the plain equivariant PPO with no augmentation."""
 
 
 # Actor OBS
