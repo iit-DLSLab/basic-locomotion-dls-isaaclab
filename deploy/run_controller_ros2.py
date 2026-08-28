@@ -1,327 +1,167 @@
-# Description: This script is used to run the policy on the real robot
+# Description: ROS2 entrypoint for the real robot controller
 
 # Authors:
 # Giulio Turrisi
-import sys
 import os
+import sys
+import threading
+import time
+
+import numpy as np
+import rclpy
+from dls2_interface.msg import BaseState, BlindState, Imu, TrajectoryGenerator
+from rclpy.node import Node
+from sensor_msgs.msg import Joy
+
 dir_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(dir_path, ".."))
 
-
-
-import rclpy 
-from rclpy.node import Node 
-from sensor_msgs.msg import Joy
-from dls2_interface.msg import BaseState, BlindState, Imu, TrajectoryGenerator
-
-import time
-import numpy as np
-np.set_printoptions(precision=3, suppress=True)
-
-import threading
-
-import copy
-
-# Gym and Simulation related imports
-import mujoco
-from gym_quadruped.quadruped_env import QuadrupedEnv
-from gym_quadruped.utils.quadruped_utils import LegsAttr
-
-
-# Locomotion Policy imports
-from locomotion_policy_wrapper import LocomotionPolicyWrapper
+from console import Console
+from controller_core import ControllerCore
 
 import config
 
-# Set the priority of the process
-pid = os.getpid()
-print("PID: ", pid)
-os.system("renice -n -21 -p " + str(pid))
-os.system("echo -20 > /proc/" + str(pid) + "/autogroup")
-#for real time, launch it with chrt -r 99 python3 run_controller.py
+
+np.set_printoptions(precision=3, suppress=True)
 
 
-USE_MUJOCO_RENDER = False
+def configure_process_priority():
+    pid = os.getpid()
+    print("PID: ", pid)
+    os.system("renice -n -21 -p " + str(pid))
+    os.system("echo -20 > /proc/" + str(pid) + "/autogroup")
 
 
 class ControllerROS2(Node):
     def __init__(self):
-        super().__init__('ControllerROS2')
+        super().__init__("ControllerROS2")
 
-        # Mujoco env
-        robot_name = config.robot
-        scene_name = config.scene
-        simulation_dt = 0.002
+        self.controller = ControllerCore()
 
-
-        # Create the quadruped robot environment -----------------------------------------------------------
-        self.env = QuadrupedEnv(
-            robot=robot_name,
-            scene=scene_name,
-            sim_dt=simulation_dt,
-            base_vel_command_type="human",  # "forward", "random", "forward+rotate", "human"
-        )
-        self.env.reset(random=False)
-        
-        self.last_render_time = time.time()
-        if USE_MUJOCO_RENDER:
-            self.env.render()   
-                 
-
-        # Subscribers and Publishers
-        self.subscription_base_state = self.create_subscription(BaseState,"/base_state", self.get_base_state_callback, 1)
-        self.subscription_blind_state = self.create_subscription(BlindState,"blind_state", self.get_blind_state_callback, 1)
-        self.subscription_imu = self.create_subscription(Imu,"imu", self.get_imu_callback, 1)
-        
-        self.subscription_joy = self.create_subscription(Joy,"joy", self.get_joy_callback, 1)
-        self.last_joy_time = None
-        
-        self.publisher_trajectory_generator = self.create_publisher(TrajectoryGenerator,"/trajectory_generator", 1)
-        self.sequence_id = 0 # To keep track of the last msg sent, useful for debugging and synchronization
-        RL_FREQ = 1./(config.training_env["sim"]["dt"]*config.training_env["decimation"])  # Hz, frequency of the RL controller
-        self.timer = self.create_timer(1.0/RL_FREQ, self.compute_rl_control)
-
-
-        # Safety check to not do anything until a first base and blind state are received
-        self.first_message_base_arrived = False
-        self.first_message_joints_arrived = False 
-        self.first_message_imu_arrived = False
-
-        # Timing stuff
-        self.loop_time = 0.002
-        self.last_start_time = None
-
-        # Base State
         self.position = np.zeros(3)
         self.orientation = np.zeros(4)
         self.linear_velocity = np.zeros(3)
         self.angular_velocity = np.zeros(3)
 
-        # Blind State
         self.joint_positions = np.zeros(12)
         self.joint_velocities = np.zeros(12)
 
-        # IMU
         self.imu_linear_acceleration = np.zeros(3)
         self.imu_angular_velocity = np.zeros(3)
         self.imu_orientation = np.zeros(4)
 
-        
-        # Initialization of variables used in the main control loop --------------------------------
-        self.locomotion_policy = LocomotionPolicyWrapper(env=self.env)
+        self.first_message_base_arrived = False
+        self.first_message_joints_arrived = False
+        self.first_message_imu_arrived = False
 
+        self.joy_axes = None
+        self.joy_buttons = None
+        self.last_joy_time = None
+        self.joy_update_id = 0
 
-        self.stand_up_and_down_actions = LegsAttr(*[np.zeros((1, int(self.env.mjModel.nu/4))) for _ in range(4)])
-        keyframe_id = mujoco.mj_name2id(self.env.mjModel, mujoco.mjtObj.mjOBJ_KEY, "down")
-        goDown_qpos = self.env.mjModel.key_qpos[keyframe_id]
-        self.stand_up_and_down_actions.FL = goDown_qpos[7:10]
-        self.stand_up_and_down_actions.FR = goDown_qpos[10:13]
-        self.stand_up_and_down_actions.RL = goDown_qpos[13:16]
-        self.stand_up_and_down_actions.RR = goDown_qpos[16:19]
-        self.joint_positions = goDown_qpos[7:19]
+        self.subscription_base_state = self.create_subscription(BaseState, "/base_state", self.get_base_state_callback, 1)
+        self.subscription_blind_state = self.create_subscription(BlindState, "blind_state", self.get_blind_state_callback, 1)
+        self.subscription_imu = self.create_subscription(Imu, "imu", self.get_imu_callback, 1)
+        self.subscription_joy = self.create_subscription(Joy, "joy", self.get_joy_callback, 1)
 
+        self.publisher_trajectory_generator = self.create_publisher(TrajectoryGenerator, "/trajectory_generator", 1)
+        self.sequence_id = 0
+        rl_freq = 1.0 / (config.training_env["sim"]["dt"] * config.training_env["decimation"])
+        self.timer = self.create_timer(1.0 / rl_freq, self.compute_rl_control)
 
-        # Interactive Command Line ----------------------------
-        from console import Console
-        self.console = Console(controller_node=self)
+        self.console = Console(controller=self.controller)
         thread_console = threading.Thread(target=self.console.interactive_command_line)
         thread_console.daemon = True
         thread_console.start()
 
-    
     def get_joy_callback(self, msg):
-        """
-        Callback function to handle joystick input. Joystick used is a 
-        8Bitdi Ultimate 2C Wireless Controller.
-        """
-
-        filter_joystick = 0.7
-        self.env._ref_base_lin_vel_H[0] = self.env._ref_base_lin_vel_H[0]*filter_joystick + (msg.axes[1]/3.5)*(1-filter_joystick)  # Forward/Backward
-        self.env._ref_base_lin_vel_H[1] = self.env._ref_base_lin_vel_H[1]*filter_joystick + (msg.axes[0]/3.5)*(1-filter_joystick)  # Left/Right
-        self.env._ref_base_ang_yaw_dot = self.env._ref_base_ang_yaw_dot*filter_joystick + (msg.axes[3]/2.)*(1-filter_joystick)  # Yaw
-
+        self.joy_axes = np.array(msg.axes, copy=True)
+        self.joy_buttons = np.array(msg.buttons, copy=True)
         self.last_joy_time = time.time()
-
-        #kill the node if the button is pressed
-        if msg.buttons[8] == 1:
-            self.get_logger().info("Joystick button pressed, shutting down the node.") 
-            # This will kill the robot hal
-            os.system("kill -9 $(ps -u | grep -m 1 hal | grep -o \"^[^ ]* *[0-9]*\" | grep -o \"[0-9]*\")")
-            # This will kill the process running this script
-            os.system("pkill -f play_ros2.py") 
-            exit(0)
-
-
+        self.joy_update_id += 1
 
     def get_base_state_callback(self, msg):
-        self.position = np.array(msg.pose.position) #world frame
-        # For the quaternion, the order is [x, y, z, w] on DLS2 but here we want [w, x, y, z] (mujoco convention)
-        self.orientation = np.roll(np.array(msg.pose.orientation), 1) #world frame
-        self.linear_velocity = np.array(msg.velocity.linear) #world frame
-        self.angular_velocity = np.array(msg.velocity.angular) #base frame
-
+        self.position = np.array(msg.pose.position)
+        self.orientation = np.roll(np.array(msg.pose.orientation), 1)
+        self.linear_velocity = np.array(msg.velocity.linear)
+        self.angular_velocity = np.array(msg.velocity.angular)
         self.first_message_base_arrived = True
-
-
 
     def get_blind_state_callback(self, msg):
         self.joint_positions = np.array(msg.joints_position)
         self.joint_velocities = np.array(msg.joints_velocity)
-
         self.first_message_joints_arrived = True
-     
-        
-    def get_imu_callback(self, msg):
-        self.imu_linear_acceleration = np.array(msg.linear_acceleration) 
-        self.imu_angular_velocity = np.array(msg.angular_velocity) 
-        # For the quaternion, the order is [x, y, z, w] on DLS2 but here we want [w, x, y, z] (mujoco convention)
-        self.imu_orientation = np.roll(np.array(msg.orientation), 1) 
 
+    def get_imu_callback(self, msg):
+        self.imu_linear_acceleration = np.array(msg.linear_acceleration)
+        self.imu_angular_velocity = np.array(msg.angular_velocity)
+        self.imu_orientation = np.roll(np.array(msg.orientation), 1)
         self.first_message_imu_arrived = True
 
-
     def compute_rl_control(self):
-        # Update the loop time
-        start_time = time.perf_counter()
-        if(self.last_start_time is not None):
-            self.loop_time = (start_time - self.last_start_time)
-        self.last_start_time = start_time
-        simulation_dt = self.loop_time
-        
+        control_output = self.controller.compute_control_step(
+            position=self.position,
+            orientation=self.orientation,
+            linear_velocity=self.linear_velocity,
+            angular_velocity=self.angular_velocity,
+            joint_positions=self.joint_positions,
+            joint_velocities=self.joint_velocities,
+            imu_linear_acceleration=self.imu_linear_acceleration,
+            imu_angular_velocity=self.imu_angular_velocity,
+            imu_orientation=self.imu_orientation,
+            base_state_received=self.first_message_base_arrived,
+            joints_state_received=self.first_message_joints_arrived,
+            imu_state_received=self.first_message_imu_arrived,
+            joy_axes=self.joy_axes,
+            joy_buttons=self.joy_buttons,
+            joy_message_time=self.last_joy_time,
+            joy_update_id=self.joy_update_id,
+            is_rl_activated=self.console.isRLActivated,
+            monotonic_time=time.perf_counter(),
+            wall_time=time.time(),
+        )
 
-        # Safety check to not do anything until a first base and blind state are received
-        if(config.training_env["use_imu"] or config.training_env["use_concurrent_state_est"]):
-            if(self.first_message_imu_arrived==False or self.first_message_joints_arrived==False):
-                return
-        else:
-            if(self.first_message_base_arrived==False or self.first_message_joints_arrived==False):
-                return
-        
-        # Update the mujoco model
-        # Note that in case of IMU or concurrent state estimator, these info below are not used,
-        # In the case we have a state estimator, this is usefull only for debugging visually
-        self.env.mjData.qpos[0:3] = copy.deepcopy(self.position)
-        self.env.mjData.qvel[0:3] = copy.deepcopy(self.linear_velocity)
+        if control_output is None:
+            return
 
-        if(config.training_env["use_imu"] or config.training_env["use_concurrent_state_est"]):
-            self.env.mjData.qpos[3:7] = copy.deepcopy(self.imu_orientation)
-            self.env.mjData.qvel[3:6] = copy.deepcopy(self.imu_angular_velocity)
-        else:
-            self.env.mjData.qpos[3:7] = copy.deepcopy(self.orientation)
-            self.env.mjData.qvel[3:6] = copy.deepcopy(self.angular_velocity)
-        
-        # These info instead are used for sure in all the cases
-        self.env.mjData.qpos[7:] = copy.deepcopy(self.joint_positions)
-        self.env.mjData.qvel[6:] = copy.deepcopy(self.joint_velocities)
-        self.env.mjModel.opt.timestep = simulation_dt
-        mujoco.mj_forward(self.env.mjModel, self.env.mjData) 
-        
-        # Safety check for joystick timeout
-        if(self.last_joy_time is not None and time.time() - self.last_joy_time > 1.0):
-            self.env._ref_base_lin_vel_H[0] = 0.0
-            self.env._ref_base_lin_vel_H[1] = 0.0
-            self.env._ref_base_ang_yaw_dot = 0.0
-            print("Joystick timeout, stopping the robot")
-            self.last_joy_time = None
-            
+        if control_output["shutdown_requested"]:
+            self._shutdown_from_joystick()
+            return
 
-        env = self.env
-        locomotion_policy = self.locomotion_policy
-        
-        qpos, qvel = env.mjData.qpos, env.mjData.qvel
-        base_lin_vel = env.base_lin_vel(frame='base')
-        base_ang_vel = env.base_ang_vel(frame='base')
-        base_ori_euler_xyz = env.base_ori_euler_xyz
-        heading_orientation_SO3 = env.heading_orientation_SO3
-        base_quat_wxyz = qpos[3:7]
-        base_pos = env.base_pos
-
-
-        joints_pos = LegsAttr(*[np.zeros((1, int(env.mjModel.nu/4))) for _ in range(4)])
-        joints_pos.FL = qpos[env.legs_qpos_idx.FL]
-        joints_pos.FR = qpos[env.legs_qpos_idx.FR]
-        joints_pos.RL = qpos[env.legs_qpos_idx.RL]
-        joints_pos.RR = qpos[env.legs_qpos_idx.RR]
-
-        # variable saved for goDown and goUp motion
-        self.joint_positions = np.concatenate([joints_pos.FL, joints_pos.FR, joints_pos.RL, joints_pos.RR], axis=0).flatten()
-    
-        joints_vel = LegsAttr(*[np.zeros((1, int(env.mjModel.nu/4))) for _ in range(4)])
-        joints_vel.FL = qvel[env.legs_qvel_idx.FL]
-        joints_vel.FR = qvel[env.legs_qvel_idx.FR]
-        joints_vel.RL = qvel[env.legs_qvel_idx.RL]
-        joints_vel.RR = qvel[env.legs_qvel_idx.RR]
-        ref_base_lin_vel, ref_base_ang_vel = env.target_base_vel()
-
-
-        if(self.console.isRLActivated):
-
-            desired_joint_pos = locomotion_policy.compute_control(
-                        base_pos=base_pos, 
-                        base_ori_euler_xyz=base_ori_euler_xyz, 
-                        base_quat_wxyz=base_quat_wxyz,
-                        base_lin_vel=base_lin_vel, 
-                        base_ang_vel=base_ang_vel,
-                        heading_orientation_SO3=heading_orientation_SO3,
-                        joints_pos=joints_pos, 
-                        joints_vel=joints_vel,
-                        ref_base_lin_vel=ref_base_lin_vel, 
-                        ref_base_ang_vel=ref_base_ang_vel,
-                        imu_linear_acceleration=self.imu_linear_acceleration,
-                        imu_angular_velocity=self.imu_angular_velocity,
-                        imu_orientation=self.imu_orientation)
-            
-            # Impedence Loop
-            Kp = locomotion_policy.Kp_walking
-            Kd = locomotion_policy.Kd_walking
-
-
-        else:
-            desired_joint_pos = LegsAttr(*[np.zeros((1, int(env.mjModel.nu/4))) for _ in range(4)])
-            desired_joint_pos.FL = self.stand_up_and_down_actions.FL
-            desired_joint_pos.FR = self.stand_up_and_down_actions.FR
-            desired_joint_pos.RL = self.stand_up_and_down_actions.RL
-            desired_joint_pos.RR = self.stand_up_and_down_actions.RR
-
-            # Impedence Loop
-            Kp = locomotion_policy.Kp_stand_up_and_down
-            Kd = locomotion_policy.Kd_stand_up_and_down
-
-        # Publish the desired joint positions to the trajectory generator --------------------------------
         trajectory_generator_msg = TrajectoryGenerator()
         trajectory_generator_msg.timestamp = float(self.get_clock().now().nanoseconds)
-        trajectory_generator_msg.sequence_id = int(self.sequence_id % 1000)  # To avoid overflow, we reset the sequence id after it reaches a certain value
+        trajectory_generator_msg.sequence_id = int(self.sequence_id % 1000)
         self.sequence_id += 1
-        trajectory_generator_msg.joints_position = np.array([desired_joint_pos.FL, desired_joint_pos.FR, desired_joint_pos.RL, desired_joint_pos.RR]).flatten().tolist()
-        trajectory_generator_msg.joints_velocity = np.zeros(12).tolist()
-        trajectory_generator_msg.kp = (np.ones(12) * Kp).tolist()
-        trajectory_generator_msg.kd = (np.ones(12) * Kd).tolist()
+        trajectory_generator_msg.joints_position = control_output["desired_joint_positions"].tolist()
+        trajectory_generator_msg.joints_velocity = control_output["desired_joint_velocities"].tolist()
+        trajectory_generator_msg.kp = control_output["kp"].tolist()
+        trajectory_generator_msg.kd = control_output["kd"].tolist()
 
         self.publisher_trajectory_generator.publish(trajectory_generator_msg)
-        
-        
-        
-        # Render the simulation at a certain frequency -----------------------------------------------------------
-        if USE_MUJOCO_RENDER:
-            RENDER_FREQ = 30  # Hz
-            if time.time() - self.last_render_time > 1.0 / RENDER_FREQ or self.env.step_num == 1:
-                self.env.render()
-                self.last_render_time = time.time()
+
+    def _shutdown_from_joystick(self):
+        self.get_logger().info("Joystick button pressed, shutting down the node.")
+        os.system("kill -9 $(ps -u | grep -m 1 hal | grep -o \"^[^ ]* *[0-9]*\" | grep -o \"[0-9]*\")")
+        os.system("pkill -f play_ros2.py")
+        rclpy.shutdown()
+        raise SystemExit(0)
 
 
+def main():
+    print("Hello from basic-locomotion-dls-isaaclab ros node.")
+    configure_process_priority()
 
-
-#---------------------------
-if __name__ == '__main__':
-    
-    print('Hello from basic-locomotion-dls-isaaclab ros node.')
-    
     rclpy.init()
     controller_ros2_node = ControllerROS2()
     rclpy.spin(controller_ros2_node)
-    
+
     controller_ros2_node.destroy_node()
-    rclpy.shutdown()
+    if rclpy.ok():
+        rclpy.shutdown()
 
     print("ControllerROS2 node is stopped")
-    exit(0)
+    raise SystemExit(0)
+
+
+if __name__ == "__main__":
+    main()

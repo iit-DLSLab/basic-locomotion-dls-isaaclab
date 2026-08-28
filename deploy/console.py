@@ -1,6 +1,11 @@
 import readline
-import readchar
 import time
+import sys
+import atexit
+import tty
+import termios
+
+import readchar
 
 from gym_quadruped.utils.quadruped_utils import LegsAttr
 
@@ -9,13 +14,23 @@ import copy
 import mujoco
 
 class Console():
-    def __init__(self, controller_node):
-        self.controller_node = controller_node
+    def __init__(self, controller=None, controller_node=None):
+        self.controller = controller if controller is not None else controller_node
 
         self.isDown = True
         self.isRLActivated = False
-        #self.controller_node.Kp = 0.
-        #self.controller_node.Kd = 0.
+        
+        # Store original terminal settings for restoration
+        try:
+            self.terminal_fd = sys.stdin.fileno()
+            self.original_settings = termios.tcgetattr(self.terminal_fd)
+        except (OSError, termios.error):
+            # If terminal settings can't be obtained, just skip restoration
+            self.terminal_fd = None
+            self.original_settings = None
+        
+        # Register cleanup function
+        atexit.register(self._restore_terminal)
 
         # Autocomplete setup
         self.commands = [
@@ -23,6 +38,16 @@ class Console():
         ]
         readline.set_completer(self.complete)
         readline.parse_and_bind("tab: complete")
+
+    def _restore_terminal(self):
+        """Restore terminal to original settings on exit."""
+        if self.original_settings is not None:
+            try:
+                termios.tcsetattr(self.terminal_fd, termios.TCSADRAIN, self.original_settings)
+                # Ensure echo is enabled
+                sys.stdout.flush()
+            except Exception:
+                pass
 
 
     def complete(self, text, state):
@@ -49,16 +74,16 @@ class Console():
                     start_time = time.time()
                     time_motion = 5.
 
-                    temp = copy.deepcopy(self.controller_node.joint_positions)
-                    initial_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller_node.env.mjModel.nu/4))) for _ in range(4)])
+                    temp = copy.deepcopy(self.controller.joint_positions)
+                    initial_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller.env.mjModel.nu/4))) for _ in range(4)])
                     initial_joint_positions.FL = temp[0:3]
                     initial_joint_positions.FR = temp[3:6]
                     initial_joint_positions.RL = temp[6:9]
                     initial_joint_positions.RR = temp[9:12]
 
-                    reference_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller_node.env.mjModel.nu/4))) for _ in range(4)])
-                    keyframe_id = mujoco.mj_name2id(self.controller_node.env.mjModel, mujoco.mjtObj.mjOBJ_KEY, "home")
-                    standUp_qpos = self.controller_node.env.mjModel.key_qpos[keyframe_id]
+                    reference_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller.env.mjModel.nu/4))) for _ in range(4)])
+                    keyframe_id = mujoco.mj_name2id(self.controller.env.mjModel, mujoco.mjtObj.mjOBJ_KEY, "home")
+                    standUp_qpos = self.controller.env.mjModel.key_qpos[keyframe_id]
                     
                     reference_joint_positions.FL = standUp_qpos[7:10]
                     reference_joint_positions.FR = standUp_qpos[10:13]
@@ -73,10 +98,10 @@ class Console():
                             for initial, reference in zip(initial_joint_positions, reference_joint_positions)
                         ]
 
-                        self.controller_node.stand_up_and_down_actions.FL = interpolated_positions[0]
-                        self.controller_node.stand_up_and_down_actions.FR = interpolated_positions[1]
-                        self.controller_node.stand_up_and_down_actions.RL = interpolated_positions[2]
-                        self.controller_node.stand_up_and_down_actions.RR = interpolated_positions[3]
+                        self.controller.stand_up_and_down_actions.FL = interpolated_positions[0]
+                        self.controller.stand_up_and_down_actions.FR = interpolated_positions[1]
+                        self.controller.stand_up_and_down_actions.RL = interpolated_positions[2]
+                        self.controller.stand_up_and_down_actions.RR = interpolated_positions[3]
 
                         time.sleep(0.01)
 
@@ -98,16 +123,16 @@ class Console():
                     #if(self.isRLActivated):
                     #    initial_joint_positions = copy.deepcopy(self.controller_node.locomotion_policy.desired_joint_pos)
                     #else:
-                    temp = copy.deepcopy(self.controller_node.joint_positions)
-                    initial_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller_node.env.mjModel.nu/4))) for _ in range(4)])
+                    temp = copy.deepcopy(self.controller.joint_positions)
+                    initial_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller.env.mjModel.nu/4))) for _ in range(4)])
                     initial_joint_positions.FL = temp[0:3]
                     initial_joint_positions.FR = temp[3:6]
                     initial_joint_positions.RL = temp[6:9]
                     initial_joint_positions.RR = temp[9:12]
                     
-                    keyframe_id = mujoco.mj_name2id(self.controller_node.env.mjModel, mujoco.mjtObj.mjOBJ_KEY, "down")
-                    goDown_qpos = self.controller_node.env.mjModel.key_qpos[keyframe_id]
-                    reference_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller_node.env.mjModel.nu/4))) for _ in range(4)])
+                    keyframe_id = mujoco.mj_name2id(self.controller.env.mjModel, mujoco.mjtObj.mjOBJ_KEY, "down")
+                    goDown_qpos = self.controller.env.mjModel.key_qpos[keyframe_id]
+                    reference_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller.env.mjModel.nu/4))) for _ in range(4)])
                     reference_joint_positions.FL = goDown_qpos[7:10]
                     reference_joint_positions.FR = goDown_qpos[10:13]
                     reference_joint_positions.RL = goDown_qpos[13:16]
@@ -121,10 +146,10 @@ class Console():
                             for initial, reference in zip(initial_joint_positions, reference_joint_positions)
                         ]
             
-                        self.controller_node.stand_up_and_down_actions.FL = interpolated_positions[0]
-                        self.controller_node.stand_up_and_down_actions.FR = interpolated_positions[1]
-                        self.controller_node.stand_up_and_down_actions.RL = interpolated_positions[2]
-                        self.controller_node.stand_up_and_down_actions.RR = interpolated_positions[3]
+                        self.controller.stand_up_and_down_actions.FL = interpolated_positions[0]
+                        self.controller.stand_up_and_down_actions.FR = interpolated_positions[1]
+                        self.controller.stand_up_and_down_actions.RL = interpolated_positions[2]
+                        self.controller.stand_up_and_down_actions.RR = interpolated_positions[3]
 
                         time.sleep(0.01)
 
@@ -140,29 +165,32 @@ class Console():
 
 
                 elif(input_string == "setKp"):
-                    print("Kp stand_up_and_down: ", self.controller_node.locomotion_policy.Kp_stand_up_and_down)
+                    print("Kp stand_up_and_down: ", self.controller.locomotion_policy.Kp_stand_up_and_down)
                     temp = input("Enter Kp: ")
                     if(temp != ""):
-                        self.controller_node.locomotion_policy.Kp_stand_up_and_down= float(temp)
+                        self.controller.locomotion_policy.Kp_stand_up_and_down= float(temp)
                     
-                    print("Kp walking: ", self.controller_node.locomotion_policy.Kp_walking)
+                    print("Kp walking: ", self.controller.locomotion_policy.Kp_walking)
                     temp = input("Enter Kp: ")
                     if(temp != ""):
-                        self.controller_node.locomotion_policy.Kp_walking = float(temp)
+                        self.controller.locomotion_policy.Kp_walking = float(temp)
                 
 
                 elif(input_string == "setKd"):
-                    print("Kd stand_up_and_down: ", self.controller_node.locomotion_policy.Kd_stand_up_and_down)
+                    print("Kd stand_up_and_down: ", self.controller.locomotion_policy.Kd_stand_up_and_down)
                     temp = input("Enter Kd: ")
                     if(temp != ""):
-                        self.controller_node.locomotion_policy.Kd_stand_up_and_down = float(temp)
+                        self.controller.locomotion_policy.Kd_stand_up_and_down = float(temp)
 
-                    print("Kd walking: ", self.controller_node.locomotion_policy.Kd_walking)
+                    print("Kd walking: ", self.controller.locomotion_policy.Kd_walking)
                     temp = input("Enter Kd: ")
                     if(temp != ""):
-                        self.controller_node.locomotion_policy.Kd_walking = float(temp)
+                        self.controller.locomotion_policy.Kd_walking = float(temp)
                 
                 elif(input_string == "ictp"):
+                    if readchar is None:
+                        print("Interactive keyboard control is unavailable: missing Python module 'readchar'.")
+                        continue
                     print("Interactive Keyboard Control")
                     print("w: Move Forward")
                     print("s: Move Backward")
@@ -175,45 +203,59 @@ class Console():
                     print("2: Reset Pitch")
                     print("3: Pitch Down")
                     print("Press any other key to exit")
-                    while True:
-                        command = readchar.readkey()
-                        if(command == "w"):
-                            self.controller_node.env._ref_base_lin_vel_H[0] += 0.1
-                            print("w")
-                        elif(command == "s"):
-                            self.controller_node.env._ref_base_lin_vel_H[0] -= 0.1
-                            print("s")
-                        elif(command == "a"):
-                            self.controller_node.env._ref_base_lin_vel_H[1] += 0.1
-                            print("a")
-                        elif(command == "d"):
-                            self.controller_node.env._ref_base_lin_vel_H[1] -= 0.1
-                            print("d")
-                        elif(command == "q"):
-                            self.controller_node.env._ref_base_ang_yaw_dot += 0.1
-                            print("q")
-                        elif(command == "e"):
-                            self.controller_node.env._ref_base_ang_yaw_dot -= 0.1
-                            print("e")
-                        elif(command == "0"):
-                            self.controller_node.env._ref_base_lin_vel_H[0] = 0
-                            self.controller_node.env._ref_base_lin_vel_H[1] = 0
-                            self.controller_node.env._ref_base_ang_yaw_dot = 0 
-                            print("0")
-                        elif(command == "1"):
-                            self.pitch_delta -= 0.1
-                            print("1")
-                        elif(command == "2"):
-                            self.pitch_delta = 0
-                            print("2")
-                        elif(command == "3"):
-                            self.pitch_delta += 0.1
-                            print("3")
-                        else:
-                            self.controller_node.env._ref_base_lin_vel_H[0] = 0
-                            self.controller_node.env._ref_base_lin_vel_H[1] = 0
-                            self.controller_node.env._ref_base_ang_yaw_dot = 0 
-                            break
+                    try:
+                        while True:
+                            try:
+                                command = readchar.readkey()
+                            except KeyboardInterrupt:
+                                print("\nExiting interactive mode")
+                                break
+                            except Exception as e:
+                                print(f"\nError reading key: {e}")
+                                break
+                            
+                            if command == "w":
+                                self.controller.env._ref_base_lin_vel_H[0] += 0.1
+                                print("w", end="\r")
+                            elif command == "s":
+                                self.controller.env._ref_base_lin_vel_H[0] -= 0.1
+                                print("s", end="\r")
+                            elif command == "a":
+                                self.controller.env._ref_base_lin_vel_H[1] += 0.1
+                                print("a", end="\r")
+                            elif command == "d":
+                                self.controller.env._ref_base_lin_vel_H[1] -= 0.1
+                                print("d", end="\r")
+                            elif command == "q":
+                                self.controller.env._ref_base_ang_yaw_dot += 0.1
+                                print("q", end="\r")
+                            elif command == "e":
+                                self.controller.env._ref_base_ang_yaw_dot -= 0.1
+                                print("e", end="\r")
+                            elif command == "0":
+                                self.controller.env._ref_base_lin_vel_H[0] = 0
+                                self.controller.env._ref_base_lin_vel_H[1] = 0
+                                self.controller.env._ref_base_ang_yaw_dot = 0 
+                                print("0", end="\r")
+                            elif command == "1":
+                                self.pitch_delta -= 0.1
+                                print("1", end="\r")
+                            elif command == "2":
+                                self.pitch_delta = 0
+                                print("2", end="\r")
+                            elif command == "3":
+                                self.pitch_delta += 0.1
+                                print("3", end="\r")
+                            else:
+                                self.controller.env._ref_base_lin_vel_H[0] = 0
+                                self.controller.env._ref_base_lin_vel_H[1] = 0
+                                self.controller.env._ref_base_ang_yaw_dot = 0 
+                                print("\nExiting interactive mode")
+                                break
+                    finally:
+                        # Ensure terminal is restored
+                        self._restore_terminal()
+
             
             
             except Exception as e:

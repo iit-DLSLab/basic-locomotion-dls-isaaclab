@@ -1,0 +1,4 @@
+# Attributes for SCHED_DEADLINE policy
+period : 10 # ms, setting sched_period. This is the desired periodicity of the process
+runtime_factor : 1 # used to compute sched_runtime = period * runtime_factor. The sched_runtime attribute is usually set to the average computation time (or worst-case execution time for hard real-time tasts)
+deadline_factor : 1 # used to compute sched_deadline = period * deadline_factor. The sched_deadline attribute is a time window, starting from the beginning of the period, when sched_runtime microseconds are available to execute the task.

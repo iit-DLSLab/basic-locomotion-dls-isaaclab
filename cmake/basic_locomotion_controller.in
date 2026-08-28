@@ -1,0 +1,52 @@
+#!/bin/bash
+set -eo pipefail
+
+RUNTIME_ROOT="@BASIC_LOCOMOTION_RUNTIME_ROOT@"
+export BASIC_LOCOMOTION_CONTROLLER_RUNTIME_ROOT="$RUNTIME_ROOT"
+export PYTHONPATH="@BASIC_LOCOMOTION_DLS_PYTHON_ROOT@${PYTHONPATH:+:$PYTHONPATH}"
+
+for candidate in \
+    "@BASIC_LOCOMOTION_DLS_PYTHON_ROOT@" \
+    "@BASIC_LOCOMOTION_DLS_PYTHON_ROOT@/dls_messages" \
+    "@BASIC_LOCOMOTION_DLS_PYTHON_ROOT@/dls_messages/dds"; do
+    if [ -f "$candidate/BaseState.py" ] && [ -f "$candidate/BlindState.py" ] && [ -f "$candidate/Imu.py" ] && [ -f "$candidate/TrajectoryGenerator.py" ]; then
+        export BASIC_LOCOMOTION_CONTROLLER_TYPES_PATH="$candidate"
+        break
+    fi
+done
+
+PREFERRED_DLS2_PYTHON="${DLS2_PYTHON:-@BASIC_LOCOMOTION_SHARED_PYTHON@}"
+DLS2_PYTHON="$PREFERRED_DLS2_PYTHON"
+if [ ! -x "$DLS2_PYTHON" ]; then
+    echo "basic_locomotion_controller: missing shared DLS2 interpreter at $DLS2_PYTHON" >&2
+    exit 127
+fi
+PYTHON_EXECUTABLE="$DLS2_PYTHON"
+
+DLS_SETUP_SCRIPT="@BASIC_LOCOMOTION_DLS_PYTHON_ROOT@/dls2_py/scripts/setup.sh"
+if [ -f "$DLS_SETUP_SCRIPT" ]; then
+    # shellcheck disable=SC1090
+    export COLCON_PYTHON_EXECUTABLE="${COLCON_PYTHON_EXECUTABLE:-$PYTHON_EXECUTABLE}"
+    export COLCON_TRACE="${COLCON_TRACE:-}"
+    export AMENT_TRACE_SETUP_FILES="${AMENT_TRACE_SETUP_FILES:-}"
+    source "$DLS_SETUP_SCRIPT"
+fi
+
+RUNTIME_SITE_PACKAGES="$("$PYTHON_EXECUTABLE" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+GYM_SRC="$RUNTIME_SITE_PACKAGES/gym_quadruped"
+GYM_TMP_ROOT="/tmp/basic_locomotion_controller_python"
+GYM_TMP_SITE="$GYM_TMP_ROOT/site-packages"
+GYM_TMP_PACKAGE="$GYM_TMP_SITE/gym_quadruped"
+
+if [ -d "$GYM_SRC" ] && [ ! -d "$GYM_TMP_PACKAGE" ]; then
+    mkdir -p "$GYM_TMP_SITE"
+    cp -a "$GYM_SRC" "$GYM_TMP_PACKAGE"
+fi
+
+if [ -d "$GYM_TMP_PACKAGE" ]; then
+    export PYTHONPATH="$GYM_TMP_SITE${PYTHONPATH:+:$PYTHONPATH}"
+fi
+
+exec "$PYTHON_EXECUTABLE" \
+    "$RUNTIME_ROOT/deploy/run_controller_dls2.py" \
+    "$@"
