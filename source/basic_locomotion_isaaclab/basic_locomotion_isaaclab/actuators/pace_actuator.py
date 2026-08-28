@@ -8,7 +8,7 @@ import torch
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from isaaclab.actuators import DCMotor
+from isaaclab.actuators import DCMotor, resolve_joint_parameter
 from isaaclab.utils.types import ArticulationActions
 from isaaclab.utils import DelayBuffer
 if TYPE_CHECKING:
@@ -39,7 +39,9 @@ class PaceDCMotor(DCMotor):
                     f"encoder_bias must have {self.num_joints} elements (one per joint), "
                     f"but got {len(cfg.encoder_bias)}: {cfg.encoder_bias}"
                 )
-        self.encoder_bias = self._parse_joint_parameter(cfg.encoder_bias, 0.0)
+        self.encoder_bias = resolve_joint_parameter(
+            cfg.encoder_bias, 0.0, self.joint_names, self._num_envs, self._device
+        )
 
         self.torques_delay_buffer = DelayBuffer(cfg.max_delay + 1, self._num_envs, device=self._device)
         self.torques_delay_buffer.set_time_lag(cfg.max_delay, torch.arange(self._num_envs, device=self._device))
