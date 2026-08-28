@@ -5,7 +5,7 @@
 from __future__ import annotations
 import torch
 
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 
 from isaaclab.actuators import DCMotorCfg
 

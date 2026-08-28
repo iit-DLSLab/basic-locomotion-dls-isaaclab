@@ -103,7 +103,7 @@ def track_orientation_l2(self) -> torch.Tensor:
     terrain_pitch = -torch.atan2(delta_z, delta_s)
     terrain_roll = torch.zeros_like(terrain_pitch)
 
-    root_roll_w, root_pitch_w, _ = math_utils.euler_xyz_from_quat(self._robot.data.root_quat_w)
+    root_roll_w, root_pitch_w, _ = math_utils.euler_xyz_from_quat(self._robot.data.root_quat_w.torch)
     root_roll_w = torch.atan2(torch.sin(root_roll_w), torch.cos(root_roll_w))
     root_pitch_w = torch.atan2(torch.sin(root_pitch_w), torch.cos(root_pitch_w))
 
@@ -398,7 +398,7 @@ def feet_slide(self) -> torch.Tensor:
 
 def feet_to_hip_distance_l2(self) -> torch.Tensor:
     should_move = torch.norm(self._commands[:, :3], dim=1) > 0.01
-    rot_w2h = math_utils.matrix_from_quat(math_utils.yaw_quat(self._robot.data.root_quat_w))
+    rot_w2h = math_utils.matrix_from_quat(math_utils.yaw_quat(self._robot.data.root_quat_w.torch))
     feet_to_base_w = self._robot.data.body_pos_w[:, self._feet_ids_robot, :3] - self._robot.data.root_state_w[
         :, :3
     ].unsqueeze(1)

@@ -8,7 +8,7 @@ from __future__ import annotations
 import torch
 from typing import TYPE_CHECKING
 
-from isaacsim.core.utils.types import ArticulationActions
+from isaaclab.utils.types import ArticulationActions
 
 from isaaclab.actuators import DCMotor
 from isaaclab.utils import DelayBuffer, LinearInterpolation

@@ -95,14 +95,23 @@ def randomize_joint_parameters(
         viscous_friction_coeff = viscous_friction_coeff[env_ids_for_slice, joint_ids]
 
 
-        # Single write call for all versions
-        asset.write_joint_friction_coefficient_to_sim(
-            joint_friction_coeff=static_friction_coeff,
-            joint_dynamic_friction_coeff=static_friction_coeff,
-            joint_viscous_friction_coeff=viscous_friction_coeff,
-            joint_ids=joint_ids,
-            env_ids=env_ids,
-        )
+        # Newton exposes a single dry-friction value, while PhysX backends also
+        # provide a separate dynamic-friction coefficient.
+        if hasattr(asset, "write_joint_dynamic_friction_coefficient_to_sim_index"):
+            asset.write_joint_friction_coefficient_to_sim_index(
+                joint_friction_coeff=static_friction_coeff,
+                joint_dynamic_friction_coeff=static_friction_coeff,
+                joint_viscous_friction_coeff=viscous_friction_coeff,
+                joint_ids=joint_ids,
+                env_ids=env_ids,
+            )
+        else:
+            asset.write_joint_friction_coefficient_to_sim_index(
+                joint_friction_coeff=static_friction_coeff,
+                joint_viscous_friction_coeff=viscous_friction_coeff,
+                joint_ids=joint_ids,
+                env_ids=env_ids,
+            )
 
     # joint armature
     if armature_distribution_params is not None:
@@ -114,8 +123,8 @@ def randomize_joint_parameters(
             operation=operation,
             distribution=distribution,
         )
-        asset.write_joint_armature_to_sim(
-            armature[env_ids_for_slice, joint_ids], joint_ids=joint_ids, env_ids=env_ids
+        asset.write_joint_armature_to_sim_index(
+            armature=armature[env_ids_for_slice, joint_ids], joint_ids=joint_ids, env_ids=env_ids
         )
 
 

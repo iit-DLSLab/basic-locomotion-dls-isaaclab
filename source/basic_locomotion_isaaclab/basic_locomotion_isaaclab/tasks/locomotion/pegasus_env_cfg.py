@@ -7,11 +7,23 @@ from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, MultiMeshRayCasterCameraCfg, TiledCameraCfg, patterns
-from isaaclab.sim import SimulationCfg, PhysxCfg
+from isaaclab.sim import SimulationCfg
+from isaaclab_tasks.utils import PresetCfg
+
+from isaaclab_newton.physics import (
+    KaminoPADMMSolverCfg,
+    MJWarpSolverCfg,
+    NewtonCfg,
+    NewtonCollisionPipelineCfg,
+    NewtonShapeCfg,
+)
+from isaaclab_ov.physics import OvPhysxCfg
+from isaaclab_physx.physics import PhysxCfg
+from isaaclab.physics import PhysxAutoCfg
 from isaaclab.envs import ViewerCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.sensors import ImuCfg
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelWithAdditiveBiasCfg
 
 from basic_locomotion_isaaclab.assets.pegasus_asset import PEGASUS_CFG 
@@ -116,6 +128,28 @@ class EventCfg:
                                    "roll": (-0.5, 0.5), "pitch": (-0.5, 0.5), "yaw": (-0.5, 0.5)}},
     )
 
+
+@configclass
+class PhysicsCfg(PresetCfg):
+    isaacsim_physx = PhysxCfg(gpu_max_rigid_patch_count=2**23)
+    ovphysx = OvPhysxCfg(gpu_max_rigid_patch_count=2**23)
+    physx = PhysxAutoCfg(isaacsim_physx=isaacsim_physx, ovphysx=ovphysx)
+    newton_mjwarp = NewtonCfg(
+        solver_cfg=MJWarpSolverCfg(
+            njmax=1000,
+            nconmax=300,
+            cone="pyramidal",
+            impratio=1.0,
+            integrator="implicitfast",
+            use_mujoco_contacts=False,
+        ),
+        #collision_cfg=NewtonCollisionPipelineCfg(max_triangle_pairs=2_500_000),
+        num_substeps=2,
+        debug_mode=False,
+        default_shape_cfg=NewtonShapeCfg(margin=0.0, ke=160000.0, kd=1100.0),
+    )
+    newton_kamino = NewtonCfg(solver_cfg=KaminoPADMMSolverCfg(max_contacts_per_world=64))
+    default = newton_mjwarp
 
 
 
@@ -268,10 +302,7 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
             dynamic_friction=1.0,
             restitution=0.0,
         ),
-        physx=PhysxCfg(
-            gpu_max_rigid_patch_count=2**23,
-            #gpu_max_rigid_patch_count= 5 * 2 ** 16,
-        ),
+        physics=PhysicsCfg(),
     )
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",

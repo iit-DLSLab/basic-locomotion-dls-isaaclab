@@ -47,7 +47,12 @@ class PaceDCMotor(DCMotor):
     def reset(self, env_ids: Sequence[int]):
         super().reset(env_ids)
         # reset buffers
-        self.torques_delay_buffer.reset(env_ids)
+        try:
+            self.torques_delay_buffer.reset(env_ids)
+        except RuntimeError:
+            # Isaac Lab 3.0: warp-backed CircularBuffer rejects indexed resets;
+            # fall back to a full reset (one-step delay transient for other envs)
+            self.torques_delay_buffer.reset(None)
 
     def update_encoder_bias(self, encoder_bias: torch.Tensor):
         self.encoder_bias = encoder_bias
