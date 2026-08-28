@@ -24,7 +24,6 @@ class FlashSACJobCfg:
         cfg = {} if cfg is None else cfg
         cfg.setdefault("runner_args", {})
         cfg.setdefault("agent_args", {})
-        cfg["runner_args"]["headless_singleton"] = "--headless"
 
         # WandbLogWriter mirrors metrics to local TensorBoard event files for Ray.
         cfg["agent_args"]["agent.logger"] = {

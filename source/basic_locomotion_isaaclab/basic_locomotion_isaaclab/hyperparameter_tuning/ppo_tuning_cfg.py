@@ -25,7 +25,6 @@ class PPOJobCfg:
         cfg = {} if cfg is None else cfg
         cfg.setdefault("runner_args", {})
         cfg.setdefault("hydra_args", {})
-        cfg["runner_args"]["headless_singleton"] = "--headless"
         cfg["runner_args"]["--logger"] = "wandb"
         cfg["runner_args"]["--log_project_name"] = "basic-locomotion-ppo-tuning"
         cfg["hydra_args"]["agent.max_iterations"] = 2_000

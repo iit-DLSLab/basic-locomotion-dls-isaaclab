@@ -12,7 +12,7 @@
 """Train FlashSAC on an Isaac Lab task.
 
 Usage (from an environment with Isaac Lab installed):
-    flashsac-train --task Isaac-Velocity-Rough-G1-v0 --num_envs 1024 --headless
+    flashsac-train --task Isaac-Velocity-Rough-G1-v0 --num_envs 1024
 """
 
 from __future__ import annotations

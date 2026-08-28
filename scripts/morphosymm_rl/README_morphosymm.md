@@ -12,15 +12,15 @@ These script integrate with morphosymm-rl to train a policy with symmetries.
 - Train with
 
 ```bash
-python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Go2-Flat --num_envs=4096 --headless
-python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Go2-Rough-Blind --num_envs=4096 --headless
-python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Go2-Rough-Vision --num_envs=4096 --headless
+python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Go2-Flat --num_envs=4096 
+python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Go2-Rough-Blind --num_envs=4096
+python scripts/morphosymm_rl/train_symm.py --task=Locomotion-Go2-Rough-Vision --num_envs=4096
 ```
 
 - Play with
 
 ```bash
-python scripts/morphosymm_rl/play_symm.py --task=Locomotion-Go2-Flat --num_envs=4096 --headless
-python scripts/morphosymm_rl/play_symm.py --task=Locomotion-Go2-Rough-Blind --num_envs=4096 --headless
-python scripts/morphosymm_rl/play_symm.py --task=Locomotion-Go2-Rough-Vision --num_envs=4096 --headless
+python scripts/morphosymm_rl/play_symm.py --task=Locomotion-Go2-Flat --num_envs=4096 --visualizer newton
+python scripts/morphosymm_rl/play_symm.py --task=Locomotion-Go2-Rough-Blind --num_envs=4096 --visualizer newton
+python scripts/morphosymm_rl/play_symm.py --task=Locomotion-Go2-Rough-Vision --num_envs=4096 --visualizer newton
 ```
