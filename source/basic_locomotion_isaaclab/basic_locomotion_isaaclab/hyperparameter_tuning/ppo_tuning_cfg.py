@@ -40,12 +40,18 @@ class PPOJobCfg:
             def get_mlp_layers(_):
                 return [tune.choice(neurons_per_layer).sample() for _ in range(num_layers)]
 
-            cfg["hydra_args"]["agent.policy.actor_hidden_dims"] = tune.sample_from(get_mlp_layers)
-            cfg["hydra_args"]["agent.policy.critic_hidden_dims"] = tune.sample_from(get_mlp_layers)
-            cfg["hydra_args"]["agent.policy.activation"] = tune.choice(["relu", "tanh", "sigmoid", "elu"])
+            cfg["hydra_args"]["agent.actor.hidden_dims"] = tune.sample_from(get_mlp_layers)
+            cfg["hydra_args"]["agent.critic.hidden_dims"] = tune.sample_from(get_mlp_layers)
+            # actor/critic are separate RslRlMLPModelCfg instances now, so each activation is sampled
+            # independently rather than sharing one value like the old single "policy" cfg did.
+            cfg["hydra_args"]["agent.actor.activation"] = tune.choice(["relu", "tanh", "sigmoid", "elu"])
+            cfg["hydra_args"]["agent.critic.activation"] = tune.choice(["relu", "tanh", "sigmoid", "elu"])
 
         if vary_network_type:
-            cfg["hydra_args"]["agent.policy.class_name"] = tune.choice(["ActorCriticRecurrent", "ActorCritic"])
+            # rsl-rl 5.x resolves class_name via rsl_rl.utils.resolve_callable: "MLPModel"/"RNNModel"
+            # (not the old "ActorCritic"/"ActorCriticRecurrent"). Sampled independently per actor/critic.
+            cfg["hydra_args"]["agent.actor.class_name"] = tune.choice(["RNNModel", "MLPModel"])
+            cfg["hydra_args"]["agent.critic.class_name"] = tune.choice(["RNNModel", "MLPModel"])
 
         if vary_algorithm:
             cfg["hydra_args"]["agent.algorithm.clip_param"] = tune.choice([0.1, 0.15, 0.2, 0.25, 0.3])
