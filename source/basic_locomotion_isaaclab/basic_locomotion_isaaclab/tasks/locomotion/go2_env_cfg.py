@@ -449,15 +449,11 @@ class Go2RoughBlindEnvCfg(Go2FlatEnvCfg):
             "flat": terrain_gen.MeshPlaneTerrainCfg(
                 proportion=0.2
             ),
-            "discrete_obstacles_terrain": terrain_gen.MeshRepeatedBoxesTerrainCfg(
-                proportion=0.2,         
-                abs_height_noise=(-0.05, 0.05),
-                object_params_start=terrain_gen.MeshRepeatedBoxesTerrainCfg.ObjectCfg(
-                    num_objects=40, height=0.10, size=(0.6, 0.6), max_yx_angle=0.0, degrees=True
-                ),
-                object_params_end=terrain_gen.MeshRepeatedBoxesTerrainCfg.ObjectCfg(
-                    num_objects=40, height=0.25, size=(1.2, 1.2), max_yx_angle=0.0, degrees=True
-                ),platform_width=2.0,
+            "boxes": terrain_gen.MeshRandomGridTerrainCfg(
+                proportion=0.1, grid_width=0.45, grid_height_range=(0.05, 0.10), platform_width=2.0,
+            ),
+            "star": terrain_gen.MeshStarTerrainCfg(
+                proportion=0.1, num_bars=10, bar_width_range=(0.15, 0.20), bar_height_range=(0.05, 0.15), platform_width=2.0,
             ),
             "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
                 proportion=0.1, noise_range=(0.02, 0.06), noise_step=0.02, border_width=0.25

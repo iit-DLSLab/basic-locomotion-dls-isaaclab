@@ -34,7 +34,7 @@ class MorphologycalSymmetriesCfg:
     symmetric_initialization = True
     """Whether to project the actor/critic initial weights onto the symmetry-equivariant subspace."""
 
-    use_data_augmentation = True
+    use_data_augmentation = False
     """Whether to augment the rollout storage with every symmetry-group replica of each collected transition
     (selects PPOSymmDataAugmented). If False, uses the plain equivariant PPO with no augmentation."""
 
@@ -52,7 +52,7 @@ obs_space_names_actor = [
         "joints_pos",
         "clock_data",
     ]*int(history_length)
-#obs_space_names_actor += ["heightmap:7x9"]
+obs_space_names_actor += ["heightmap:7x9"]
 
 
 # Critic OBS
@@ -67,7 +67,7 @@ obs_space_names_critic = [
         "joints_pos",
         "clock_data",
     ]*int(history_length)
-#obs_space_names_critic += ["heightmap:7x9"]
+obs_space_names_critic += ["heightmap:7x9"]
 obs_space_names_critic += [    
         "clock_data", "clock_data", "clock_data",  # P gains
         "clock_data", "clock_data", "clock_data",  # D gains

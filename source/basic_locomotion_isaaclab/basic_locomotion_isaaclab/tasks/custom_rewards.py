@@ -433,7 +433,7 @@ def feet_edge(self) -> torch.Tensor:
     feet_pos_w = self._robot.data.body_pos_w[:, self._feet_ids_robot, :3]
     feet_pos_scanner_w = feet_pos_w - self._edge_height_scanner.data.pos_w.unsqueeze(1)
 
-    scanner_yaw_w = math_utils.yaw_quat(self._edge_height_scanner.data.quat_w).unsqueeze(1).expand(
+    scanner_yaw_w = math_utils.yaw_quat(self._edge_height_scanner.data.quat_w.torch).unsqueeze(1).expand(
         -1, feet_pos_w.shape[1], -1
     )
     feet_pos_scanner = math_utils.quat_apply_inverse(scanner_yaw_w, feet_pos_scanner_w)
