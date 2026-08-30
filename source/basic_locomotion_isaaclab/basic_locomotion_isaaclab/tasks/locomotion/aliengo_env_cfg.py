@@ -290,6 +290,8 @@ class AliengoFlatEnvCfg(DirectRLEnvCfg):
         state_space += 2 #base pitch and height
         state_space += 3 #clean lin vel b
         state_space += 4 #contacts foot
+        state_space += 8 #feet air and contact time
+        state_space += 4 #foot error
         
         pattern_cfg = pose_height_scanner.pattern_cfg
         height_map_x_points = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1

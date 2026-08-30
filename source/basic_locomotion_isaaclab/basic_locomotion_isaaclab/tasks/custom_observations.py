@@ -5,6 +5,8 @@ import torch
 from isaaclab.assets import Articulation
 from isaaclab.managers import SceneEntityCfg
 
+from . import custom_rewards
+
 
 def _normalize_actuator_gain(gain: torch.Tensor, nominal_gain: torch.Tensor) -> torch.Tensor:
     """Normalize an explicit actuator gain without dividing by a zero nominal gain."""
@@ -173,6 +175,16 @@ def _get_privileged_observation_asymmetric(self):
     # Foot contact data
     contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_contact_sensor_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
 
+    # Feet air and contact time
+    current_air_time = torch.clip(self._contact_sensor.data.current_air_time[:, self._feet_contact_sensor_ids], max=1.0)
+    current_contact_time = torch.clip(self._contact_sensor.data.current_contact_time[:, self._feet_contact_sensor_ids], max=1.0)
+
+    # Foot height tracking error (per foot, relative to local terrain height)
+    feet_terrain_height = custom_rewards._get_feet_terrain_heights(self)
+    foot_error = torch.abs(
+        self.cfg.desired_feet_height + feet_terrain_height - self._robot.data.body_pos_w[:, self._feet_ids_robot, 2]
+    )
+
     # Pose height scanner data
     height_data = (
         self._pose_height_scanner.data.pos_w[:, 2].unsqueeze(1)
@@ -181,7 +193,7 @@ def _get_privileged_observation_asymmetric(self):
     )
     height_data = torch.nan_to_num(height_data, nan=0.0, posinf=1.0, neginf=-1.0)
     height_data = height_data.clip(-1.0, 1.0)
-    
+
     # Privileged observation
     obs_privileged = torch.cat((
                         hip_stiffness, thigh_stiffness, calf_stiffness, #P gain
@@ -190,6 +202,9 @@ def _get_privileged_observation_asymmetric(self):
                         height_error.unsqueeze(1),
                         terrain_pitch.unsqueeze(1),
                         contacts_foot,
+                        current_air_time,
+                        current_contact_time,
+                        foot_error,
                         height_data
                         )
                     , dim=-1)
