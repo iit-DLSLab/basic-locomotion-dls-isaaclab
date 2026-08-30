@@ -73,7 +73,10 @@ class LocomotionEnv(DirectRLEnv):
         self._desired_hip_offset = torch.tensor([-self.cfg.desired_hip_offset, self.cfg.desired_hip_offset, -self.cfg.desired_hip_offset, self.cfg.desired_hip_offset], device=self.device)
         
         # Periodic gait
-        self._step_freq = torch.tensor(self.cfg.desired_step_freq, device=self.device)
+        # Step frequency ramps linearly with the commanded xy linear velocity norm, from
+        # cfg.desired_step_freq (at/below cfg.step_freq_vel_norm_low) up to
+        # cfg.desired_step_freq_max (at/above cfg.step_freq_vel_norm_high). See _update_step_freq().
+        self._step_freq = torch.full((self.num_envs, 1), self.cfg.desired_step_freq, device=self.device)
         self._duty_factor = torch.tensor(self.cfg.desired_duty_factor, device=self.device)
         self._phase_offset = torch.tensor(self.cfg.desired_phase_offset, device=self.device).repeat(self.num_envs,1)
         self._phase_signal = self._phase_offset.clone()# + self.step_dt * self._step_freq * torch.rand(self.num_envs, 1, device=self.device)*10.
@@ -293,7 +296,7 @@ class LocomotionEnv(DirectRLEnv):
 
 
     def _get_observations(self) -> dict:
-        
+
         # Sample new commands if needed
         custom_events._get_new_random_commands(self)
 
@@ -301,10 +304,22 @@ class LocomotionEnv(DirectRLEnv):
         # Observation --------------------------------------------------------------------------------------
         clock_data = None
         if(self.cfg.use_clock_signal):
+            # Ramp the step frequency linearly with the commanded xy linear velocity norm:
+            # cfg.desired_step_freq below cfg.step_freq_vel_norm_low, cfg.desired_step_freq_max
+            # above cfg.step_freq_vel_norm_high, linear in between.
+            cmd_lin_vel_xy_norm = torch.norm(self._commands[:, :2], dim=1, keepdim=True)
+            ramp = (cmd_lin_vel_xy_norm - self.cfg.step_freq_vel_norm_low) / (
+                self.cfg.step_freq_vel_norm_high - self.cfg.step_freq_vel_norm_low
+            )
+            ramp = torch.clamp(ramp, 0.0, 1.0)
+            self._step_freq = self.cfg.desired_step_freq + ramp * (self.cfg.desired_step_freq_max - self.cfg.desired_step_freq)
+            
+            # Increment the phase signal by the step frequency and wrap to [0, 1)
             self._phase_signal += self.step_dt * self._step_freq
             self._phase_signal = self._phase_signal % 1.0
             clock_data = torch.vstack([self._phase_signal[:,0], self._phase_signal[:,1], self._phase_signal[:,2], self._phase_signal[:,3]]).T
-            # all the envs that are not moving, we put -1
+            
+            # for all the envs that are not moving, we put -1
             should_move = torch.norm(self._commands[:, :3], dim=1) > 0.01
             clock_data[:, :] = clock_data[:, :]*should_move.unsqueeze(1).expand(-1, 4) + -1.0* ~should_move.unsqueeze(1).expand(-1, 4)
             

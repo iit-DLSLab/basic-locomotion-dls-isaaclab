@@ -189,8 +189,11 @@ def joints_energy_l1(self) -> torch.Tensor:
 
 
 def feet_air_time(self) -> torch.Tensor:
-    desired_contact_time = 0.47
-    desired_air_time = 0.25
+    # Derived from the (possibly per-env, velocity-ramped) step frequency and duty factor:
+    # contact_time = duty_factor / step_freq, air_time = (1 - duty_factor) / step_freq.
+    step_period = 1.0 / self._step_freq
+    desired_contact_time = self._duty_factor * step_period
+    desired_air_time = (1.0 - self._duty_factor) * step_period
 
     current_air_time = self._contact_sensor.data.current_air_time[
         :, self._feet_contact_sensor_ids
@@ -209,8 +212,8 @@ def feet_air_time(self) -> torch.Tensor:
 
     desired_time = torch.where(
         in_contact,
-        torch.full_like(current_time, desired_contact_time),
-        torch.full_like(current_time, desired_air_time),
+        desired_contact_time.expand_as(current_time),
+        desired_air_time.expand_as(current_time),
     )
 
     # From 0 to 1 until reach the target

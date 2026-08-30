@@ -388,9 +388,6 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
 
 
     # Feet reward scale
-    feet_air_time_reward_scale = 0.5 * 0.0
-    feet_air_time_variance_reward_scale = -1.0 * 0.0
-
     feet_height_clearance_aperiodic_reward_scale = 0.25 * 0.0  
     feet_height_clearance_periodic_reward_scale = 0.25 * 0.0
     
@@ -411,15 +408,20 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
 
     feet_vertical_surface_contacts_reward_scale = -2.5
 
-
-    # Contact suggestion reward scale
-    periodic_contact_suggestion_reward_scale =  0.5
-    # Desired step freq and duty factor (if periodic gait contact suggestion is used)
-    desired_step_freq = 1.4
+    # variables used in feet air time and periodic contact suggestion reward
+    desired_step_freq = 1.4 
     desired_duty_factor = 0.65
+
+    feet_air_time_reward_scale = 0.25
+    feet_air_time_variance_reward_scale = -1.0*0.0
+
+    periodic_contact_suggestion_reward_scale = 0.5
+    desired_step_freq_max = 1.8
+    step_freq_vel_norm_low = 0.4
+    step_freq_vel_norm_high = 0.8
     desired_phase_offset = [0.0, 0.5, 0.5, 0.0] #FL, FR, RL, RR
 
-    stance_contact_suggestion_reward_scale = 0.25
+    stance_contact_suggestion_reward_scale = 1.0
 
 
 

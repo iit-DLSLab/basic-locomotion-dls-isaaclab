@@ -59,9 +59,17 @@ class LocomotionPolicyWrapper:
         self.use_clock_signal = config.training_env["use_clock_signal"]
 
 
-        self.step_freq = 1.4
-        self.duty_factor = 0.65
-        self.phase_offset = np.array([0.0, 0.5, 0.5, 0.0])
+        # Step frequency ramps linearly with the commanded xy linear velocity norm, from
+        # desired_step_freq (at/below step_freq_vel_norm_low) up to desired_step_freq_max
+        # (at/above step_freq_vel_norm_high). Falls back to a fixed 1.4 Hz step frequency
+        # (no ramp) for policies exported before these fields existed. See compute_control().
+        self.desired_step_freq = config.training_env.get("desired_step_freq", 1.4)
+        self.desired_step_freq_max = config.training_env.get("desired_step_freq_max", self.desired_step_freq)
+        self.step_freq_vel_norm_low = config.training_env.get("step_freq_vel_norm_low", 0.0)
+        self.step_freq_vel_norm_high = config.training_env.get("step_freq_vel_norm_high", 1.0)
+        self.step_freq = self.desired_step_freq
+        self.duty_factor = config.training_env["desired_duty_factor"]
+        self.phase_offset = np.array(config.training_env["desired_phase_offset"])
         self.phase_signal = self.phase_offset
 
         self.desired_clip_actions = config.training_env["desired_clip_actions"]
@@ -182,6 +190,16 @@ class LocomotionPolicyWrapper:
 
         # Phase Signal
         if(self.use_clock_signal):
+            # Ramp the step frequency linearly with the commanded xy linear velocity norm:
+            # desired_step_freq below step_freq_vel_norm_low, desired_step_freq_max above
+            # step_freq_vel_norm_high, linear in between.
+            ref_lin_vel_xy_norm = np.linalg.norm(ref_base_lin_vel_h[0:2])
+            ramp = (ref_lin_vel_xy_norm - self.step_freq_vel_norm_low) / (
+                self.step_freq_vel_norm_high - self.step_freq_vel_norm_low
+            )
+            ramp = np.clip(ramp, 0.0, 1.0)
+            self.step_freq = self.desired_step_freq + ramp * (self.desired_step_freq_max - self.desired_step_freq)
+
             self.phase_signal += self.step_freq * (1 / (self.RL_FREQ))
             self.phase_signal = self.phase_signal % 1.0
             obs = np.concatenate((obs, self.phase_signal), axis=0)
