@@ -81,11 +81,6 @@ class SimulatorROS2(Node):
 
         self.timer = self.create_timer(1.0/SCHEDULER_FREQ, self.compute_simulator_step_callback)
 
-        # Timing stuff
-        self.loop_time = 0.002
-        self.last_start_time = None
-        self.last_mpc_loop_time = 0.0
-
 
         # Mujoco env
         self.env = QuadrupedEnv(
@@ -95,7 +90,12 @@ class SimulatorROS2(Node):
             base_vel_command_type="human"
         )
         self.env.reset(random=False)
-        
+
+        # Names of the actuated joints, in the same order as qpos[7:]/qvel[6:]
+        self.joint_names = [
+            name for name, info in self.env.joint_info.items() if info.type != mujoco.mjtJoint.mjJNT_FREE
+        ]
+
 
         self.last_render_time = time.time()
         self.env.render()  
@@ -142,6 +142,7 @@ class SimulatorROS2(Node):
 
         # Publish Blind State ------------------------------------------------
         blind_state_msg = BlindState()
+        blind_state_msg.joints_name = self.joint_names
         blind_state_msg.joints_position = self.env.mjData.qpos[7:].tolist()
         blind_state_msg.joints_velocity = self.env.mjData.qvel[6:].tolist()
         self.publisher_blind_state.publish(blind_state_msg)
