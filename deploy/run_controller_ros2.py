@@ -99,13 +99,13 @@ class ControllerROS2(Node):
 
         # Subscribers and Publishers
         self.subscription_base_state = self.create_subscription(BaseState,"/base_state", self.get_base_state_callback, 1)
-        self.subscription_blind_state = self.create_subscription(BlindState,"blind_state", self.get_blind_state_callback, 1)
-        self.subscription_imu = self.create_subscription(Imu,"imu", self.get_imu_callback, 1)
+        self.subscription_blind_state = self.create_subscription(BlindState,"/blind_state_legged", self.get_blind_state_callback, 1)
+        self.subscription_imu = self.create_subscription(Imu,"/imu", self.get_imu_callback, 1)
         
-        self.subscription_joy = self.create_subscription(Joy,"joy", self.get_joy_callback, 1)
+        self.subscription_joy = self.create_subscription(Joy,"/joy", self.get_joy_callback, 1)
         self.last_joy_time = None
         
-        self.publisher_control_signal = self.create_publisher(ControlSignal,"/control_signal", 1)
+        self.publisher_control_signal = self.create_publisher(ControlSignal,"/control_signal_legged", 1)
         self.sequence_id = 0 # To keep track of the last msg sent, useful for debugging and synchronization
         RL_FREQ = 1./(config.training_env["sim"]["dt"]*config.training_env["decimation"])  # Hz, frequency of the RL controller
         self.timer = self.create_timer(1.0/RL_FREQ, self.compute_rl_control)
@@ -395,6 +395,7 @@ class ControllerROS2(Node):
         self.sequence_id += 1
         control_signal_msg.joints_position = np.array([desired_joint_pos.FL, desired_joint_pos.FR, desired_joint_pos.RL, desired_joint_pos.RR]).flatten().tolist()
         control_signal_msg.joints_velocity = np.zeros(12).tolist()
+        control_signal_msg.joints_torques = np.zeros(12).tolist()
         control_signal_msg.kp = (np.ones(12) * Kp).tolist()
         control_signal_msg.kd = (np.ones(12) * Kd).tolist()
 

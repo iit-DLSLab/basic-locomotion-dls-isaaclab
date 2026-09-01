@@ -71,13 +71,13 @@ class SimulatorROS2(Node):
         super().__init__('SimulatorROS2')
 
         # Subscribers and Publishers
-        self.publisher_base_state = self.create_publisher(BaseState,"base_state", 1)
-        self.publisher_blind_state = self.create_publisher(BlindState,"blind_state", 1)
-        self.publisher_imu = self.create_publisher(Imu,"imu", 1)
+        self.publisher_base_state = self.create_publisher(BaseState,"/base_state", 1)
+        self.publisher_blind_state = self.create_publisher(BlindState,"/blind_state_legged", 1)
+        self.publisher_imu = self.create_publisher(Imu,"/imu", 1)
 
-        self.publisher_low_state = self.create_publisher(LowState,"lowstate", 1)
+        self.publisher_low_state = self.create_publisher(LowState,"/lowstate", 1)
 
-        self.subscriber_control_signal = self.create_subscription(ControlSignal,"control_signal", self.get_control_signal_callback, 1)
+        self.subscriber_control_signal = self.create_subscription(ControlSignal,"/control_signal_legged", self.get_control_signal_callback, 1)
 
         self.timer = self.create_timer(1.0/SCHEDULER_FREQ, self.compute_simulator_step_callback)
 
