@@ -33,7 +33,9 @@ from isaaclab.sensors import (
 )
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
+
+from isaaclab import cloner
 
 
 from .aliengo_env_cfg import AliengoFlatEnvCfg, AliengoRoughBlindEnvCfg, AliengoRoughVisionEnvCfg
@@ -71,7 +73,10 @@ class LocomotionEnv(DirectRLEnv):
         self._desired_hip_offset = torch.tensor([-self.cfg.desired_hip_offset, self.cfg.desired_hip_offset, -self.cfg.desired_hip_offset, self.cfg.desired_hip_offset], device=self.device)
         
         # Periodic gait
-        self._step_freq = torch.tensor(self.cfg.desired_step_freq, device=self.device)
+        # Step frequency ramps linearly with the commanded xy linear velocity norm, from
+        # cfg.desired_step_freq (at/below cfg.step_freq_vel_norm_low) up to
+        # cfg.desired_step_freq_max (at/above cfg.step_freq_vel_norm_high). See _update_step_freq().
+        self._step_freq = torch.full((self.num_envs, 1), self.cfg.desired_step_freq, device=self.device)
         self._duty_factor = torch.tensor(self.cfg.desired_duty_factor, device=self.device)
         self._phase_offset = torch.tensor(self.cfg.desired_phase_offset, device=self.device).repeat(self.num_envs,1)
         self._phase_signal = self._phase_offset.clone()# + self.step_dt * self._step_freq * torch.rand(self.num_envs, 1, device=self.device)*10.
@@ -177,6 +182,22 @@ class LocomotionEnv(DirectRLEnv):
         # Ensure the order is consistent with the one expected in the cfg
         self._ids_joints_order = self._robot.find_joints(name_keys=self.cfg.desired_joints_order, preserve_order=True)[0]
 
+        # Nominal (pre-randomization) explicit-actuator PD gains. Captured here, before any
+        # "reset" mode event has run, since asset.data.default_joint_stiffness/damping is a
+        # deprecated live snapshot that reads 0 for explicit actuators like PaceDCMotor
+        # (the solver's own PD gains are zeroed; the actuator computes effort in Python).
+        self._nominal_actuator_stiffness = {}
+        self._nominal_actuator_damping = {}
+        for joint_type in ("hip", "thigh", "calf"):
+            actuator = self._robot.actuators[joint_type]
+            self._nominal_actuator_stiffness[joint_type] = actuator.stiffness.clone()
+            self._nominal_actuator_damping[joint_type] = actuator.damping.clone()
+
+        # Same reasoning for joint friction: avoid relying on the deprecated
+        # default_joint_friction_coeff/default_joint_viscous_friction_coeff snapshot semantics.
+        self._nominal_static_friction = self._robot.data.joint_friction_coeff.torch.clone()
+        self._nominal_viscous_friction = self._robot.data.joint_viscous_friction_coeff.torch.clone()
+
         if getattr(self.cfg, "visualize_edge_map", False):
             self.set_debug_vis(True)
 
@@ -232,9 +253,20 @@ class LocomotionEnv(DirectRLEnv):
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
         self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
         
-        # clone, filter, and replicate
-        self.scene.clone_environments(copy_from_source=False)
-        self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
+        # clone and replicate environments
+        src, dest = "/World/envs/env_0", "/World/envs/env_{}"
+        positions = cloner.grid_transforms(
+            self.scene.num_envs, self.scene.cfg.env_spacing, device=self.device
+        )[0]
+        global_paths = (self.cfg.terrain.prim_path,)
+        plan = cloner.clone_plan_from_env_0(
+            src, dest, self.scene.num_envs, self.device, positions, global_paths=global_paths
+        )
+        cloner.replicate(plan, stage=self.scene.stage)
+
+        # PhysX replication requires explicit collision filtering between environments.
+        if "physx" in self.scene.physics_backend:
+            self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
         
         # add lights
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
@@ -264,7 +296,7 @@ class LocomotionEnv(DirectRLEnv):
 
 
     def _get_observations(self) -> dict:
-        
+
         # Sample new commands if needed
         custom_events._get_new_random_commands(self)
 
@@ -272,10 +304,22 @@ class LocomotionEnv(DirectRLEnv):
         # Observation --------------------------------------------------------------------------------------
         clock_data = None
         if(self.cfg.use_clock_signal):
+            # Ramp the step frequency linearly with the commanded xy linear velocity norm:
+            # cfg.desired_step_freq below cfg.step_freq_vel_norm_low, cfg.desired_step_freq_max
+            # above cfg.step_freq_vel_norm_high, linear in between.
+            cmd_lin_vel_xy_norm = torch.norm(self._commands[:, :2], dim=1, keepdim=True)
+            ramp = (cmd_lin_vel_xy_norm - self.cfg.step_freq_vel_norm_low) / (
+                self.cfg.step_freq_vel_norm_high - self.cfg.step_freq_vel_norm_low
+            )
+            ramp = torch.clamp(ramp, 0.0, 1.0)
+            self._step_freq = self.cfg.desired_step_freq + ramp * (self.cfg.desired_step_freq_max - self.cfg.desired_step_freq)
+            
+            # Increment the phase signal by the step frequency and wrap to [0, 1)
             self._phase_signal += self.step_dt * self._step_freq
             self._phase_signal = self._phase_signal % 1.0
             clock_data = torch.vstack([self._phase_signal[:,0], self._phase_signal[:,1], self._phase_signal[:,2], self._phase_signal[:,3]]).T
-            # all the envs that are not moving, we put -1
+            
+            # for all the envs that are not moving, we put -1
             should_move = torch.norm(self._commands[:, :3], dim=1) > 0.01
             clock_data[:, :] = clock_data[:, :]*should_move.unsqueeze(1).expand(-1, 4) + -1.0* ~should_move.unsqueeze(1).expand(-1, 4)
             
@@ -285,12 +329,12 @@ class LocomotionEnv(DirectRLEnv):
             # If concurrent SE/Learned State Estimator, we predict linear and angular vel from IMU
             base_linear = custom_observations._get_concurrent_state_estimation(self)
             base_ang_vel = self._imu.data.ang_vel_b
-            projected_gravity_b = self._imu.data.projected_gravity_b
+            projected_gravity_b = self._robot.data.projected_gravity_b
         elif(self.cfg.use_imu):
             # Using directly the IMU
             base_linear = self._imu.data.lin_acc_b
             base_ang_vel = self._imu.data.ang_vel_b
-            projected_gravity_b = self._imu.data.projected_gravity_b
+            projected_gravity_b = self._robot.data.projected_gravity_b
         else:
             #Using a model-based state estimation
             base_linear = self._robot.data.root_lin_vel_b
@@ -480,8 +524,16 @@ class LocomotionEnv(DirectRLEnv):
 
 
     def _reset_idx(self, env_ids: torch.Tensor | None):
+        # Isaac Lab 3.0 compat: ids may arrive (or _ALL_INDICES may be) warp arrays
+        def _to_torch_ids(ids):
+            if ids is not None and not torch.is_tensor(ids):
+                import warp as wp
+                ids = wp.to_torch(ids)
+            return ids.to(dtype=torch.long) if ids is not None else ids
+
+        env_ids = _to_torch_ids(env_ids)
         if env_ids is None or len(env_ids) == self.num_envs:
-            env_ids = self._robot._ALL_INDICES
+            env_ids = _to_torch_ids(self._robot._ALL_INDICES)
 
         lin_vel_command_l1_sum = self._lin_vel_command_l1_sum[env_ids]
         has_linear_velocity_commands = lin_vel_command_l1_sum > 0.0

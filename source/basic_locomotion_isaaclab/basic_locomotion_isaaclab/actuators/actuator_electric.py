@@ -8,9 +8,9 @@ from __future__ import annotations
 import torch
 from typing import TYPE_CHECKING
 
-from isaacsim.core.utils.types import ArticulationActions
+from isaaclab.utils.types import ArticulationActions
 
-from isaaclab.actuators import DCMotor
+from isaaclab.actuators import DCMotor, resolve_joint_parameter
 from isaaclab.utils import DelayBuffer, LinearInterpolation
 
 if TYPE_CHECKING:
@@ -22,9 +22,15 @@ class IdentifiedActuatorElectric(DCMotor):
 
     def __init__(self, cfg: IdentifiedActuatorElectricCfg, *args, **kwargs):
         super().__init__(cfg, *args, **kwargs)
-        self.friction_static = self._parse_joint_parameter(self.cfg.friction_static, 0.)
-        self.activation_vel = self._parse_joint_parameter(self.cfg.activation_vel, torch.inf)
-        self.friction_dynamic = self._parse_joint_parameter(self.cfg.friction_dynamic, 0.)
+        self.friction_static = resolve_joint_parameter(
+            self.cfg.friction_static, 0., self.joint_names, self._num_envs, self._device
+        )
+        self.activation_vel = resolve_joint_parameter(
+            self.cfg.activation_vel, torch.inf, self.joint_names, self._num_envs, self._device
+        )
+        self.friction_dynamic = resolve_joint_parameter(
+            self.cfg.friction_dynamic, 0., self.joint_names, self._num_envs, self._device
+        )
 
 
     def compute(

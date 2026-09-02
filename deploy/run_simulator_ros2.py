@@ -37,7 +37,7 @@ if os.environ.get("BASIC_LOCOMOTION_ROS2_SOURCED") != "1":
 
 import rclpy 
 from rclpy.node import Node 
-from dls2_interface.msg import BaseState, BlindState, Imu, TrajectoryGenerator
+from dls2_interface.msg import BaseState, BlindState, Imu, ControlSignal
 from unitree_go.msg import LowState, MotorState, IMUState
 
 import time
@@ -71,20 +71,15 @@ class SimulatorROS2(Node):
         super().__init__('SimulatorROS2')
 
         # Subscribers and Publishers
-        self.publisher_base_state = self.create_publisher(BaseState,"base_state", 1)
-        self.publisher_blind_state = self.create_publisher(BlindState,"blind_state", 1)
-        self.publisher_imu = self.create_publisher(Imu,"imu", 1)
+        self.publisher_base_state = self.create_publisher(BaseState,"/base_state", 1)
+        self.publisher_blind_state = self.create_publisher(BlindState,"/blind_state_legged", 1)
+        self.publisher_imu = self.create_publisher(Imu,"/imu", 1)
 
-        self.publisher_low_state = self.create_publisher(LowState,"lowstate", 1)
+        self.publisher_low_state = self.create_publisher(LowState,"/lowstate", 1)
 
-        self.subscriber_trajectory_generator = self.create_subscription(TrajectoryGenerator,"trajectory_generator", self.get_trajectory_generator_callback, 1)
+        self.subscriber_control_signal = self.create_subscription(ControlSignal,"/control_signal_legged", self.get_control_signal_callback, 1)
 
         self.timer = self.create_timer(1.0/SCHEDULER_FREQ, self.compute_simulator_step_callback)
-
-        # Timing stuff
-        self.loop_time = 0.002
-        self.last_start_time = None
-        self.last_mpc_loop_time = 0.0
 
 
         # Mujoco env
@@ -95,7 +90,12 @@ class SimulatorROS2(Node):
             base_vel_command_type="human"
         )
         self.env.reset(random=False)
-        
+
+        # Names of the actuated joints, in the same order as qpos[7:]/qvel[6:]
+        self.joint_names = [
+            name for name, info in self.env.joint_info.items() if info.type != mujoco.mjtJoint.mjJNT_FREE
+        ]
+
 
         self.last_render_time = time.time()
         self.env.render()  
@@ -111,7 +111,7 @@ class SimulatorROS2(Node):
         self.Kd = 0
 
 
-    def get_trajectory_generator_callback(self, msg):
+    def get_control_signal_callback(self, msg):
 
         joints_position = np.array(msg.joints_position)
 
@@ -142,6 +142,7 @@ class SimulatorROS2(Node):
 
         # Publish Blind State ------------------------------------------------
         blind_state_msg = BlindState()
+        blind_state_msg.joints_name = self.joint_names
         blind_state_msg.joints_position = self.env.mjData.qpos[7:].tolist()
         blind_state_msg.joints_velocity = self.env.mjData.qvel[6:].tolist()
         self.publisher_blind_state.publish(blind_state_msg)

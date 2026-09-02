@@ -5,7 +5,7 @@
 
 from dataclasses import MISSING
 
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 from isaaclab.actuators import DCMotorCfg
 
 from .actuator_electric import IdentifiedActuatorElectric

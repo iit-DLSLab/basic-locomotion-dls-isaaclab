@@ -14,11 +14,23 @@ from isaaclab.sensors import (
     TiledCameraCfg,
     patterns,
 )
-from isaaclab.sim import SimulationCfg, PhysxCfg
+from isaaclab.sim import SimulationCfg
+from isaaclab_tasks.utils import PresetCfg
+
+from isaaclab_newton.physics import (
+    KaminoPADMMSolverCfg,
+    MJWarpSolverCfg,
+    NewtonCfg,
+    NewtonCollisionPipelineCfg,
+    NewtonShapeCfg,
+)
+from isaaclab_ov.physics import OvPhysxCfg
+from isaaclab_physx.physics import PhysxCfg
+from isaaclab.physics import PhysxAutoCfg
 from isaaclab.envs import ViewerCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.sensors import ImuCfg
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelWithAdditiveBiasCfg
 
 from basic_locomotion_isaaclab.assets.go2_asset import GO2_CFG 
@@ -124,6 +136,28 @@ class EventCfg:
                                    "roll": (-0.5, 0.5), "pitch": (-0.5, 0.5), "yaw": (-0.5, 0.5)}},
     )
 
+
+@configclass
+class PhysicsCfg(PresetCfg):
+    isaacsim_physx = PhysxCfg(gpu_max_rigid_patch_count=2**23)
+    ovphysx = OvPhysxCfg(gpu_max_rigid_patch_count=2**23)
+    physx = PhysxAutoCfg(isaacsim_physx=isaacsim_physx, ovphysx=ovphysx)
+    newton_mjwarp = NewtonCfg(
+        solver_cfg=MJWarpSolverCfg(
+            njmax=1000,
+            nconmax=300,
+            cone="pyramidal",
+            impratio=1.0,
+            integrator="implicitfast",
+            use_mujoco_contacts=False,
+        ),
+        collision_cfg=NewtonCollisionPipelineCfg(max_triangle_pairs=2_500_000),
+        num_substeps=2,
+        debug_mode=False,
+        default_shape_cfg=NewtonShapeCfg(margin=0.0, ke=160000.0, kd=1100.0),
+    )
+    newton_kamino = NewtonCfg(solver_cfg=KaminoPADMMSolverCfg(max_contacts_per_world=64))
+    default = newton_mjwarp
 
 
 
@@ -256,6 +290,8 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
         state_space += 2 #base pitch and height
         state_space += 3 #clean lin vel b
         state_space += 4 #contacts foot
+        state_space += 8 #feet air and contact time
+        state_space += 4 #foot error
         
         pattern_cfg = pose_height_scanner.pattern_cfg
         height_map_x_points = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1
@@ -277,10 +313,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
             dynamic_friction=1.0,
             restitution=0.0,
         ),
-        physx=PhysxCfg(
-            gpu_max_rigid_patch_count=2**23,
-            #gpu_max_rigid_patch_count= 5 * 2 ** 16,
-        ),
+        physics=PhysicsCfg(),
     )
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
@@ -331,7 +364,7 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
     
     # Desired tracking variables
     desired_base_height = 0.30
-    desired_feet_height = 0.08
+    desired_feet_height = 0.05
 
 
     # Desired clip actions
@@ -364,9 +397,6 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
 
 
     # Feet reward scale
-    feet_air_time_reward_scale = 0.25
-    feet_air_time_variance_reward_scale = -1.0*0.0
-
     feet_height_clearance_aperiodic_reward_scale = 0.25*0.0  
     feet_height_clearance_periodic_reward_scale = 0.25*0.0
     
@@ -387,16 +417,20 @@ class Go2FlatEnvCfg(DirectRLEnvCfg):
 
     feet_vertical_surface_contacts_reward_scale = -2.5
 
-
-    # Contact suggestion reward scale
-    periodic_contact_suggestion_reward_scale = 0.5
-    # Desired step freq and duty factor (if periodic gait contact suggestion is used)
-    desired_step_freq = 1.4
+    # variables used in feet air time and periodic contact suggestion reward
+    desired_step_freq = 1.4 
     desired_duty_factor = 0.65
+
+    feet_air_time_reward_scale = 0.25
+    feet_air_time_variance_reward_scale = -1.0*0.0
+
+    periodic_contact_suggestion_reward_scale = 0.5
+    desired_step_freq_max = 1.8
+    step_freq_vel_norm_low = 0.4
+    step_freq_vel_norm_high = 0.8
     desired_phase_offset = [0.0, 0.5, 0.5, 0.0] #FL, FR, RL, RR
 
     stance_contact_suggestion_reward_scale = 1.0
-
 
 
 import isaaclab.terrains as terrain_gen
@@ -405,7 +439,7 @@ from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 class Go2RoughBlindEnvCfg(Go2FlatEnvCfg):
 
     ROUGH_TERRAINS_CFG = TerrainGeneratorCfg(
-        curriculum=True,
+        curriculum=False,
         size=(8.0, 8.0),
         border_width=20.0,
         num_rows=10,
@@ -418,15 +452,11 @@ class Go2RoughBlindEnvCfg(Go2FlatEnvCfg):
             "flat": terrain_gen.MeshPlaneTerrainCfg(
                 proportion=0.2
             ),
-            "discrete_obstacles_terrain": terrain_gen.MeshRepeatedBoxesTerrainCfg(
-                proportion=0.2,         
-                abs_height_noise=(-0.05, 0.05),
-                object_params_start=terrain_gen.MeshRepeatedBoxesTerrainCfg.ObjectCfg(
-                    num_objects=40, height=0.10, size=(0.6, 0.6), max_yx_angle=0.0, degrees=True
-                ),
-                object_params_end=terrain_gen.MeshRepeatedBoxesTerrainCfg.ObjectCfg(
-                    num_objects=40, height=0.25, size=(1.2, 1.2), max_yx_angle=0.0, degrees=True
-                ),platform_width=2.0,
+            "boxes": terrain_gen.MeshRandomGridTerrainCfg(
+                proportion=0.1, grid_width=0.45, grid_height_range=(0.05, 0.10), platform_width=2.0,
+            ),
+            "star": terrain_gen.MeshStarTerrainCfg(
+                proportion=0.1, num_bars=10, bar_width_range=(0.15, 0.20), bar_height_range=(0.05, 0.15), platform_width=2.0,
             ),
             "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
                 proportion=0.1, noise_range=(0.02, 0.06), noise_step=0.02, border_width=0.25

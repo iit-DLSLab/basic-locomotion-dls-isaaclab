@@ -7,13 +7,13 @@ The module will generate a network that is able to predict heightmap from depth.
 1. First, you need to train a locomotion policy
 
 ```bash
-python scripts/rsl_rl/train.py --task=Locomotion-Go2-Rough-Vision --num_envs=4096 --headless
+python scripts/rsl_rl/train.py --task=Locomotion-Go2-Rough-Vision --num_envs=4096
 ```
 
 2. Launch the train_dagger.py script. This will load the latest policy you trained in step 1.
 
 ```bash
-python scripts/depth_to_heightmap/collect_depth_to_heightmap.py --task=Locomotion-Go2-Rough-Vision --num_envs=8192 --headless
+python scripts/depth_to_heightmap/collect_depth_to_heightmap.py --task=Locomotion-Go2-Rough-Vision --num_envs=8192
 ```
 
 3. Train the network

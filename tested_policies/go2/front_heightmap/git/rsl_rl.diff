@@ -1,0 +1,27 @@
+--- git commit ---
+aabd3eb5f6ff5b54614225d2dc1027ee5f8b90ad
+
+
+--- git status ---
+HEAD detached at v5.4.2
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   rsl_rl/utils/wandb_log_writer.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/rsl_rl/utils/wandb_log_writer.py b/rsl_rl/utils/wandb_log_writer.py
+index a8c6b55..515a2d2 100644
+--- a/rsl_rl/utils/wandb_log_writer.py
++++ b/rsl_rl/utils/wandb_log_writer.py
+@@ -42,7 +42,6 @@ class WandbLogWriter(SummaryWriter, LogWriter):
+             entity=entity,
+             name=run_name,
+             config={"log_dir": log_dir},
+-            settings=wandb.Settings(start_method="thread"),
+         )
+ 
+         # Initialize set to keep track of logged videos

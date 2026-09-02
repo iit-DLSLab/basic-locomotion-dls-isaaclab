@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Literal
 
 import torch
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 
 
 def unitree_l2_non_repetitive_pattern(

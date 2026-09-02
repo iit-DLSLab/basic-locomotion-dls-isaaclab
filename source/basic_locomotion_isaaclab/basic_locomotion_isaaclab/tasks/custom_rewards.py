@@ -103,7 +103,7 @@ def track_orientation_l2(self) -> torch.Tensor:
     terrain_pitch = -torch.atan2(delta_z, delta_s)
     terrain_roll = torch.zeros_like(terrain_pitch)
 
-    root_roll_w, root_pitch_w, _ = math_utils.euler_xyz_from_quat(self._robot.data.root_quat_w)
+    root_roll_w, root_pitch_w, _ = math_utils.euler_xyz_from_quat(self._robot.data.root_quat_w.torch)
     root_roll_w = torch.atan2(torch.sin(root_roll_w), torch.cos(root_roll_w))
     root_pitch_w = torch.atan2(torch.sin(root_pitch_w), torch.cos(root_pitch_w))
 
@@ -189,8 +189,11 @@ def joints_energy_l1(self) -> torch.Tensor:
 
 
 def feet_air_time(self) -> torch.Tensor:
-    desired_contact_time = 0.47
-    desired_air_time = 0.25
+    # Derived from the (possibly per-env, velocity-ramped) step frequency and duty factor:
+    # contact_time = duty_factor / step_freq, air_time = (1 - duty_factor) / step_freq.
+    step_period = 1.0 / self._step_freq
+    desired_contact_time = self._duty_factor * step_period
+    desired_air_time = (1.0 - self._duty_factor) * step_period
 
     current_air_time = self._contact_sensor.data.current_air_time[
         :, self._feet_contact_sensor_ids
@@ -209,8 +212,8 @@ def feet_air_time(self) -> torch.Tensor:
 
     desired_time = torch.where(
         in_contact,
-        torch.full_like(current_time, desired_contact_time),
-        torch.full_like(current_time, desired_air_time),
+        desired_contact_time.expand_as(current_time),
+        desired_air_time.expand_as(current_time),
     )
 
     # From 0 to 1 until reach the target
@@ -398,7 +401,7 @@ def feet_slide(self) -> torch.Tensor:
 
 def feet_to_hip_distance_l2(self) -> torch.Tensor:
     should_move = torch.norm(self._commands[:, :3], dim=1) > 0.01
-    rot_w2h = math_utils.matrix_from_quat(math_utils.yaw_quat(self._robot.data.root_quat_w))
+    rot_w2h = math_utils.matrix_from_quat(math_utils.yaw_quat(self._robot.data.root_quat_w.torch))
     feet_to_base_w = self._robot.data.body_pos_w[:, self._feet_ids_robot, :3] - self._robot.data.root_state_w[
         :, :3
     ].unsqueeze(1)
@@ -433,7 +436,7 @@ def feet_edge(self) -> torch.Tensor:
     feet_pos_w = self._robot.data.body_pos_w[:, self._feet_ids_robot, :3]
     feet_pos_scanner_w = feet_pos_w - self._edge_height_scanner.data.pos_w.unsqueeze(1)
 
-    scanner_yaw_w = math_utils.yaw_quat(self._edge_height_scanner.data.quat_w).unsqueeze(1).expand(
+    scanner_yaw_w = math_utils.yaw_quat(self._edge_height_scanner.data.quat_w.torch).unsqueeze(1).expand(
         -1, feet_pos_w.shape[1], -1
     )
     feet_pos_scanner = math_utils.quat_apply_inverse(scanner_yaw_w, feet_pos_scanner_w)

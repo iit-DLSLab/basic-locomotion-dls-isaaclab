@@ -7,11 +7,23 @@ from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, MultiMeshRayCasterCameraCfg, TiledCameraCfg, patterns
-from isaaclab.sim import SimulationCfg, PhysxCfg
+from isaaclab.sim import SimulationCfg
+from isaaclab_tasks.utils import PresetCfg
+
+from isaaclab_newton.physics import (
+    KaminoPADMMSolverCfg,
+    MJWarpSolverCfg,
+    NewtonCfg,
+    NewtonCollisionPipelineCfg,
+    NewtonShapeCfg,
+)
+from isaaclab_ov.physics import OvPhysxCfg
+from isaaclab_physx.physics import PhysxCfg
+from isaaclab.physics import PhysxAutoCfg
 from isaaclab.envs import ViewerCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.sensors import ImuCfg
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelWithAdditiveBiasCfg
 
 from basic_locomotion_isaaclab.assets.pegasus_asset import PEGASUS_CFG 
@@ -116,6 +128,28 @@ class EventCfg:
                                    "roll": (-0.5, 0.5), "pitch": (-0.5, 0.5), "yaw": (-0.5, 0.5)}},
     )
 
+
+@configclass
+class PhysicsCfg(PresetCfg):
+    isaacsim_physx = PhysxCfg(gpu_max_rigid_patch_count=2**23)
+    ovphysx = OvPhysxCfg(gpu_max_rigid_patch_count=2**23)
+    physx = PhysxAutoCfg(isaacsim_physx=isaacsim_physx, ovphysx=ovphysx)
+    newton_mjwarp = NewtonCfg(
+        solver_cfg=MJWarpSolverCfg(
+            njmax=1000,
+            nconmax=300,
+            cone="pyramidal",
+            impratio=1.0,
+            integrator="implicitfast",
+            use_mujoco_contacts=False,
+        ),
+        collision_cfg=NewtonCollisionPipelineCfg(max_triangle_pairs=2_500_000),
+        num_substeps=2,
+        debug_mode=False,
+        default_shape_cfg=NewtonShapeCfg(margin=0.0, ke=160000.0, kd=1100.0),
+    )
+    newton_kamino = NewtonCfg(solver_cfg=KaminoPADMMSolverCfg(max_contacts_per_world=64))
+    default = newton_mjwarp
 
 
 
@@ -247,6 +281,8 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
         state_space += 2 #base pitch and height
         state_space += 3 #clean lin vel b
         state_space += 4 #contacts foot
+        state_space += 8 #feet air and contact time
+        state_space += 4 #foot error
 
         pattern_cfg = pose_height_scanner.pattern_cfg
         height_map_x_points = int(round(pattern_cfg.size[0] / pattern_cfg.resolution)) + 1
@@ -268,10 +304,7 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
             dynamic_friction=1.0,
             restitution=0.0,
         ),
-        physx=PhysxCfg(
-            gpu_max_rigid_patch_count=2**23,
-            #gpu_max_rigid_patch_count= 5 * 2 ** 16,
-        ),
+        physics=PhysicsCfg(),
     )
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
@@ -355,9 +388,6 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
 
 
     # Feet reward scale
-    feet_air_time_reward_scale = 0.5 * 0.0
-    feet_air_time_variance_reward_scale = -1.0 * 0.0
-
     feet_height_clearance_aperiodic_reward_scale = 0.25 * 0.0  
     feet_height_clearance_periodic_reward_scale = 0.25 * 0.0
     
@@ -378,15 +408,20 @@ class PegasusFlatEnvCfg(DirectRLEnvCfg):
 
     feet_vertical_surface_contacts_reward_scale = -2.5
 
-
-    # Contact suggestion reward scale
-    periodic_contact_suggestion_reward_scale =  0.5
-    # Desired step freq and duty factor (if periodic gait contact suggestion is used)
-    desired_step_freq = 1.4
+    # variables used in feet air time and periodic contact suggestion reward
+    desired_step_freq = 1.4 
     desired_duty_factor = 0.65
+
+    feet_air_time_reward_scale = 0.25
+    feet_air_time_variance_reward_scale = -1.0*0.0
+
+    periodic_contact_suggestion_reward_scale = 0.5
+    desired_step_freq_max = 1.8
+    step_freq_vel_norm_low = 0.4
+    step_freq_vel_norm_high = 0.8
     desired_phase_offset = [0.0, 0.5, 0.5, 0.0] #FL, FR, RL, RR
 
-    stance_contact_suggestion_reward_scale = 0.25
+    stance_contact_suggestion_reward_scale = 1.0
 
 
 

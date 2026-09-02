@@ -5,6 +5,15 @@ import torch
 from isaaclab.assets import Articulation
 from isaaclab.managers import SceneEntityCfg
 
+from . import custom_rewards
+
+
+def _normalize_actuator_gain(gain: torch.Tensor, nominal_gain: torch.Tensor) -> torch.Tensor:
+    """Normalize an explicit actuator gain without dividing by a zero nominal gain."""
+    valid = nominal_gain.abs() > torch.finfo(nominal_gain.dtype).eps
+    denominator = torch.where(valid, nominal_gain, torch.ones_like(nominal_gain))
+    return torch.where(valid, gain / denominator, torch.zeros_like(gain))
+
 
 def _get_concurrent_state_estimation(self):
     # Using a supervised learning state estimation
@@ -14,7 +23,7 @@ def _get_concurrent_state_estimation(self):
             for tensor in (
                 self._imu.data.lin_acc_b,
                 self._imu.data.ang_vel_b,
-                self._imu.data.projected_gravity_b,
+                self._robot.data.projected_gravity_b,
                 self._commands,
                 self._robot.data.joint_pos[:, self._ids_joints_order] - self._robot.data.default_joint_pos[:, self._ids_joints_order],
                 self._robot.data.joint_vel[:, self._ids_joints_order],
@@ -128,16 +137,13 @@ def _get_privileged_observation_asymmetric(self):
     asset: Articulation = self.scene[asset_cfg.name]
 
     # PD of the joints
-    hip_stiffness = asset.actuators["hip"].stiffness
-    thigh_stiffness = asset.actuators["thigh"].stiffness
-    calf_stiffness = asset.actuators["calf"].stiffness
+    hip_stiffness = _normalize_actuator_gain(asset.actuators["hip"].stiffness, self._nominal_actuator_stiffness["hip"])
+    thigh_stiffness = _normalize_actuator_gain(asset.actuators["thigh"].stiffness, self._nominal_actuator_stiffness["thigh"])
+    calf_stiffness = _normalize_actuator_gain(asset.actuators["calf"].stiffness, self._nominal_actuator_stiffness["calf"])
 
-    hip_damping = asset.actuators["hip"].damping
-    thigh_damping = asset.actuators["thigh"].damping
-    calf_damping = asset.actuators["calf"].damping
-
-    default_stiffness = asset.data.default_joint_stiffness[0][0]
-    default_damping = asset.data.default_joint_damping[0][0]
+    hip_damping = _normalize_actuator_gain(asset.actuators["hip"].damping, self._nominal_actuator_damping["hip"])
+    thigh_damping = _normalize_actuator_gain(asset.actuators["thigh"].damping, self._nominal_actuator_damping["thigh"])
+    calf_damping = _normalize_actuator_gain(asset.actuators["calf"].damping, self._nominal_actuator_damping["calf"])
 
     # height error
     height_data_scanner = self._pose_height_scanner.data.ray_hits_w[..., 2]
@@ -169,6 +175,16 @@ def _get_privileged_observation_asymmetric(self):
     # Foot contact data
     contacts_foot = self._contact_sensor.data.net_forces_w_history[:, :, self._feet_contact_sensor_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
 
+    # Feet air and contact time
+    current_air_time = torch.clip(self._contact_sensor.data.current_air_time[:, self._feet_contact_sensor_ids], max=1.0)
+    current_contact_time = torch.clip(self._contact_sensor.data.current_contact_time[:, self._feet_contact_sensor_ids], max=1.0)
+
+    # Foot height tracking error (per foot, relative to local terrain height)
+    feet_terrain_height = custom_rewards._get_feet_terrain_heights(self)
+    foot_error = torch.abs(
+        self.cfg.desired_feet_height + feet_terrain_height - self._robot.data.body_pos_w[:, self._feet_ids_robot, 2]
+    )
+
     # Pose height scanner data
     height_data = (
         self._pose_height_scanner.data.pos_w[:, 2].unsqueeze(1)
@@ -177,15 +193,18 @@ def _get_privileged_observation_asymmetric(self):
     )
     height_data = torch.nan_to_num(height_data, nan=0.0, posinf=1.0, neginf=-1.0)
     height_data = height_data.clip(-1.0, 1.0)
-    
+
     # Privileged observation
     obs_privileged = torch.cat((
-                        hip_stiffness/default_stiffness, thigh_stiffness/default_stiffness, calf_stiffness/default_stiffness, #P gain
-                        hip_damping/default_damping, thigh_damping/default_damping, calf_damping/default_damping, #D gain
+                        hip_stiffness, thigh_stiffness, calf_stiffness, #P gain
+                        hip_damping, thigh_damping, calf_damping, #D gain
                         self._robot.data.root_lin_vel_b,
                         height_error.unsqueeze(1),
                         terrain_pitch.unsqueeze(1),
                         contacts_foot,
+                        current_air_time,
+                        current_contact_time,
+                        foot_error,
                         height_data
                         )
                     , dim=-1)
@@ -199,30 +218,22 @@ def _get_privileged_observation_rma(self):
     asset: Articulation = self.scene[asset_cfg.name]
 
     # PD of the joints
-    hip_stiffness = asset.actuators["hip"].stiffness
-    thigh_stiffness = asset.actuators["thigh"].stiffness
-    calf_stiffness = asset.actuators["calf"].stiffness
+    hip_stiffness = _normalize_actuator_gain(asset.actuators["hip"].stiffness, self._nominal_actuator_stiffness["hip"])
+    thigh_stiffness = _normalize_actuator_gain(asset.actuators["thigh"].stiffness, self._nominal_actuator_stiffness["thigh"])
+    calf_stiffness = _normalize_actuator_gain(asset.actuators["calf"].stiffness, self._nominal_actuator_stiffness["calf"])
 
-    hip_damping = asset.actuators["hip"].damping
-    thigh_damping = asset.actuators["thigh"].damping
-    calf_damping = asset.actuators["calf"].damping
-
-    default_stiffness = asset.data.default_joint_stiffness[0][0]
-    default_damping = asset.data.default_joint_damping[0][0]
+    hip_damping = _normalize_actuator_gain(asset.actuators["hip"].damping, self._nominal_actuator_damping["hip"])
+    thigh_damping = _normalize_actuator_gain(asset.actuators["thigh"].damping, self._nominal_actuator_damping["thigh"])
+    calf_damping = _normalize_actuator_gain(asset.actuators["calf"].damping, self._nominal_actuator_damping["calf"])
 
     # Friction of joints
-    static_friction = asset.data.joint_friction_coeff
-    viscous_friction = asset.data.joint_viscous_friction_coeff
-    
-    default_static_friction = asset.data.default_joint_friction_coeff
-    default_viscous_friction = asset.data.default_joint_viscous_friction_coeff
-
-
+    static_friction = _normalize_actuator_gain(asset.data.joint_friction_coeff.torch, self._nominal_static_friction)
+    viscous_friction = _normalize_actuator_gain(asset.data.joint_viscous_friction_coeff.torch, self._nominal_viscous_friction)
 
     obs_rma = torch.cat((
-                        hip_stiffness/default_stiffness, thigh_stiffness/default_stiffness, calf_stiffness/default_stiffness, #P gain
-                        hip_damping/default_damping, thigh_damping/default_damping, calf_damping/default_damping, #D gain
-                        static_friction/default_static_friction, viscous_friction/default_viscous_friction # friction
+                        hip_stiffness, thigh_stiffness, calf_stiffness, #P gain
+                        hip_damping, thigh_damping, calf_damping, #D gain
+                        static_friction, viscous_friction # friction
                         )
                     , dim=-1)
 

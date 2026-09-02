@@ -95,14 +95,23 @@ def randomize_joint_parameters(
         viscous_friction_coeff = viscous_friction_coeff[env_ids_for_slice, joint_ids]
 
 
-        # Single write call for all versions
-        asset.write_joint_friction_coefficient_to_sim(
-            joint_friction_coeff=static_friction_coeff,
-            joint_dynamic_friction_coeff=static_friction_coeff,
-            joint_viscous_friction_coeff=viscous_friction_coeff,
-            joint_ids=joint_ids,
-            env_ids=env_ids,
-        )
+        # Newton exposes a single dry-friction value, while PhysX backends also
+        # provide a separate dynamic-friction coefficient.
+        if hasattr(asset, "write_joint_dynamic_friction_coefficient_to_sim_index"):
+            asset.write_joint_friction_coefficient_to_sim_index(
+                joint_friction_coeff=static_friction_coeff,
+                joint_dynamic_friction_coeff=static_friction_coeff,
+                joint_viscous_friction_coeff=viscous_friction_coeff,
+                joint_ids=joint_ids,
+                env_ids=env_ids,
+            )
+        else:
+            asset.write_joint_friction_coefficient_to_sim_index(
+                joint_friction_coeff=static_friction_coeff,
+                joint_viscous_friction_coeff=viscous_friction_coeff,
+                joint_ids=joint_ids,
+                env_ids=env_ids,
+            )
 
     # joint armature
     if armature_distribution_params is not None:
@@ -114,8 +123,8 @@ def randomize_joint_parameters(
             operation=operation,
             distribution=distribution,
         )
-        asset.write_joint_armature_to_sim(
-            armature[env_ids_for_slice, joint_ids], joint_ids=joint_ids, env_ids=env_ids
+        asset.write_joint_armature_to_sim_index(
+            armature=armature[env_ids_for_slice, joint_ids], joint_ids=joint_ids, env_ids=env_ids
         )
 
 
@@ -278,7 +287,7 @@ def _sample_random_commands(self, env_ids: torch.Tensor | None = None) -> torch.
     num_commands = self.num_envs if env_ids is None else env_ids.shape[0]
     commands = torch.empty(num_commands, self._commands.shape[1], device=self.device, dtype=self._commands.dtype)
     commands.uniform_(-1.0, 1.0)
-    commands[:, 0] *= 0.5
+    commands[:, 0] *= 0.8
     commands[:, 1] *= 0.25
     commands[:, 2] *= 0.5
     return commands
@@ -291,7 +300,7 @@ def _get_new_random_commands(self, env_ids: torch.Tensor | None = None):
     # Change direction while moving
     resample_time = self.episode_length_buf == self.max_episode_length - 400
     commands_resample = torch.zeros_like(self._commands).uniform_(-1.0, 1.0)
-    commands_resample[:, 0] *= 0.5
+    commands_resample[:, 0] *= 0.8
     commands_resample[:, 1] *= 0.25 
     commands_resample[:, 2] *= 0.5 
     self._commands[:, :3] = self._commands[:, :3] * ~resample_time.unsqueeze(1).expand(-1, 3) + commands_resample * resample_time.unsqueeze(1).expand(-1, 3)

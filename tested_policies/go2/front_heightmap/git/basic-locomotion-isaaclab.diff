@@ -1,0 +1,32 @@
+--- git commit ---
+857da747fed5198a99c9a66fb56c89dff4a1c8de
+
+
+--- git status ---
+HEAD detached from 022c403
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/tasks/locomotion/go2_env_cfg.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	tested_policies/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/tasks/locomotion/go2_env_cfg.py b/source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/tasks/locomotion/go2_env_cfg.py
+index b17db15..4068684 100644
+--- a/source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/tasks/locomotion/go2_env_cfg.py
++++ b/source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/tasks/locomotion/go2_env_cfg.py
+@@ -151,7 +151,7 @@ class PhysicsCfg(PresetCfg):
+             integrator="implicitfast",
+             use_mujoco_contacts=False,
+         ),
+-        #collision_cfg=NewtonCollisionPipelineCfg(max_triangle_pairs=2_500_000),
++        collision_cfg=NewtonCollisionPipelineCfg(max_triangle_pairs=2_500_000),
+         num_substeps=2,
+         debug_mode=False,
+         default_shape_cfg=NewtonShapeCfg(margin=0.0, ke=160000.0, kd=1100.0),

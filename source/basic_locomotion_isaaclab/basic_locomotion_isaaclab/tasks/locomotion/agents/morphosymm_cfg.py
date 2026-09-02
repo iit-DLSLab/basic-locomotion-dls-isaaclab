@@ -1,11 +1,11 @@
-from isaaclab.utils import configclass
+from isaaclab.utils.configclass import configclass
 
 from pathlib import Path
 from dataclasses import MISSING
 
 @configclass
 class MorphologycalSymmetriesCfg:
-    """Configuration for using morphosymm-rl."""
+    """Configuration for using morphosymm-rsl-rl."""
 
     class_name: str = "MorphologycalSymmetries"
     """The class name."""
@@ -25,9 +25,18 @@ class MorphologycalSymmetriesCfg:
     robot_name = None
     """The name of the robot to use inside Morphosymm."""
 
-    schedule_fixed_to_adaptive_switch = None
-    """The number of iterations to switch from fixed to adaptive schedule for the symmetry loss. 
-    If None, then no switch will happen. If the scheduler is set to adaptive, not change will be made."""
+    state_dependent_std = False
+    """Whether the actor emits its action covariance directly, instead of learning a fixed one."""
+
+    small_init_output = True
+    """Whether to start the actor mean and the critic value with small (near-zero) initial outputs."""
+
+    symmetric_initialization = True
+    """Whether to project the actor/critic initial weights onto the symmetry-equivariant subspace."""
+
+    use_data_augmentation = False
+    """Whether to augment the rollout storage with every symmetry-group replica of each collected transition
+    (selects PPOSymmDataAugmented). If False, uses the plain equivariant PPO with no augmentation."""
 
 
 # Actor OBS
@@ -43,7 +52,7 @@ obs_space_names_actor = [
         "joints_pos",
         "clock_data",
     ]*int(history_length)
-#obs_space_names_actor += ["heightmap:7x9"]
+obs_space_names_actor += ["heightmap:7x9"]
 
 
 # Critic OBS
@@ -58,12 +67,19 @@ obs_space_names_critic = [
         "joints_pos",
         "clock_data",
     ]*int(history_length)
-#obs_space_names_critic += ["heightmap:7x9"]
+obs_space_names_critic += ["heightmap:7x9"]
 obs_space_names_critic += [    
         "clock_data", "clock_data", "clock_data",  # P gains
         "clock_data", "clock_data", "clock_data",  # D gains
 ]
-obs_space_names_critic += ["base_lin_vel", "invariant_scalar", "invariant_scalar", "clock_data"]
+obs_space_names_critic += [
+        "base_lin_vel",  # clean lin vel b
+        "invariant_scalar", "invariant_scalar",  # height error, terrain pitch
+        "clock_data",  # contacts foot
+        "clock_data",  # feet air time
+        "clock_data",  # feet contact time
+        "clock_data",  # foot error
+]
 obs_space_names_critic += ["heightmap:4x4"]
 
 # Action Space

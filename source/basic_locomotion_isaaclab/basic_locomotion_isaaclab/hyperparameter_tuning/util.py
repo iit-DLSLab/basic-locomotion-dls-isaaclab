@@ -205,6 +205,12 @@ def execute_job(
                 if log_all_output:
                     print(f"{identifier_string}: {line}")
 
+        # Drain stderr immediately. A process can fail before printing its log directory,
+        # and leaving stderr unread both hides the cause and can fill the pipe.
+        stderr_thread = threading.Thread(target=stream_reader, args=(process.stderr, identifier_string, result_details))
+        stderr_thread.daemon = True
+        stderr_thread.start()
+
         # Read stdout until we find experiment info
         # Do some careful handling prevent overflowing the pipe reading buffer with error 141
         for line in iter(process.stdout.readline, ""):
@@ -227,13 +233,6 @@ def execute_job(
                     logdir = log_match.group(1)
 
                 if experiment_name and logdir:
-                    # Start stderr reader after finding experiment info
-                    stderr_thread = threading.Thread(
-                        target=stream_reader, args=(process.stderr, identifier_string, result_details)
-                    )
-                    stderr_thread.daemon = True
-                    stderr_thread.start()
-
                     # Start stdout reader to continue reading to flush buffer
                     stdout_thread = threading.Thread(
                         target=stream_reader, args=(process.stdout, identifier_string, result_details)
@@ -246,10 +245,15 @@ def execute_job(
                         "logdir": logdir,
                         "proc": process,
                         "result": " ".join(result_details),
+                        "result_details": result_details,
                     }
         process.wait()
+        stderr_thread.join(timeout=2)
         now = datetime.now().strftime("%H:%M:%S.%f")
-        completion_info = f"\n[INFO]: {identifier_string}: Job Started at {start_time}, completed at {now}\n"
+        completion_info = (
+            f"\n[INFO]: {identifier_string}: Job Started at {start_time}, completed at {now} "
+            f"with exit status {process.returncode}\n"
+        )
         print(completion_info)
         result_details.append(completion_info)
         return " ".join(result_details)
@@ -260,7 +264,7 @@ def get_gpu_node_resources(
     one_node_only: bool = False,
     include_gb_ram: bool = False,
     include_id: bool = False,
-    ray_address: str = "auto",
+    ray_address: str | None = "auto",
 ) -> list[dict] | dict:
     """Get information about available GPU node resources.
 
@@ -269,7 +273,7 @@ def get_gpu_node_resources(
         one_node_only: When true, return resources for a single node. Defaults to False.
         include_gb_ram: Set to true to convert MB to GB in result
         include_id: Set to true to include node ID
-        ray_address: The ray address to connect to.
+        ray_address: The Ray address to connect to. ``None`` starts a local Ray runtime.
 
     Returns:
         Resource information for all nodes, sorted by descending GPU count, then descending CPU

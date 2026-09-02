@@ -25,14 +25,14 @@ python -m pip install -e source/basic_locomotion_isaaclab
 - To train:
 
 ```bash
-python scripts/rsl_rl/train.py --task=Locomotion-Aliengo-Flat --num_envs=4096 --headless
-python scripts/rsl_rl/train.py --task=Locomotion-Aliengo-Rough-Blind --num_envs=4096 --headless
+python scripts/rsl_rl/train.py --task=Locomotion-Aliengo-Flat --num_envs=4096
+python scripts/rsl_rl/train.py --task=Locomotion-Aliengo-Rough-Blind --num_envs=4096
 ```
 
 - To test the policy, you can press:
 ```bash
-python scripts/rsl_rl/play.py --task=Locomotion-Aliengo-Flat --num_envs=16
-python scripts/rsl_rl/play.py --task=Locomotion-Aliengo-Rough-Blind --num_envs=16
+python scripts/rsl_rl/play.py --task=Locomotion-Aliengo-Flat --num_envs=16 --visualizer newton
+python scripts/rsl_rl/play.py --task=Locomotion-Aliengo-Rough-Blind --num_envs=16 --visualizer newton
 ```
 
 
@@ -43,10 +43,41 @@ Each of these modules has a specific README in its own script folder.
 
 ## Run Hyperparameter Search
 
+Both tuners log each trial to W&B while retaining local TensorBoard event files
+for Ray Tune metric collection. Authenticate once with `wandb login` before
+starting a sweep.
+
+Before proceeding, install this dependencies in your isaaclab env:
 ```bash
-echo "import ray; ray.init(); import time; [time.sleep(10) for _ in iter(int, 1)]" | python3 (TERMINAL 1)
+pip install pyarrow
+pip install optuna
+
 ```
 
+### PPO
+
+In local mode, the tuner starts and owns the local Ray runtime; no separate Ray
+process is needed.
+
 ```bash
-python3 ../basic_locomotion_isaaclab/exts/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/tuner.py --run_mode local --cfg_file ../basic_locomotion_isaaclab/exts/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/locomotion_aliengo_cfg.py --cfg_class LocomotionAliengoFlatTuner (TERMINAL 2)
+python source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/ppo_tuner.py \
+  --run_mode local \
+  --cfg_file source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/ppo_tuning_cfg.py \
+  --cfg_class LocomotionAliengoFlatPPOTuner
 ```
+
+### FlashSAC
+
+FlashSAC uses a separate tuner and sweep configuration so its off-policy search
+space and process handling remain independent of PPO:
+
+```bash
+python source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/flashsac_tuner.py \
+  --run_mode local \
+  --cfg_file source/basic_locomotion_isaaclab/basic_locomotion_isaaclab/hyperparameter_tuning/flashsac_tuning_cfg.py \
+  --cfg_class LocomotionGo2RoughVisionFlashSACTuner \
+  --num_samples 20
+```
+
+Pass `--ray_address auto` (or an explicit Ray address) only when connecting to
+an already-running cluster.

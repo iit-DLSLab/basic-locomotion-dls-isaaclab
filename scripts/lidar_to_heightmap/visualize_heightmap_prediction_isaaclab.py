@@ -141,6 +141,7 @@ simulation_app = app_launcher.app
 
 """Rest everything follows."""
 
+import importlib.metadata as metadata
 import os
 import time
 from collections.abc import Mapping
@@ -162,7 +163,7 @@ from isaaclab.envs import (
 )
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.utils.assets import retrieve_file_path
-from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper
+from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, handle_deprecated_rsl_rl_cfg
 from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 
 import isaaclab_tasks  # noqa: F401
@@ -422,6 +423,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     task_name = args_cli.task.split(":")[-1]
     train_task_name = task_name.replace("-Play", "")
     agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
+    agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, metadata.version("rsl-rl-lib"))
     env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
@@ -462,7 +464,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
     runner.load(policy_checkpoint)
     policy = runner.get_inference_policy(device=env.unwrapped.device)
-    policy_nn = getattr(runner.alg, "policy", getattr(runner.alg, "actor_critic", None))
 
     terrain_model.to(env.unwrapped.device)
     terrain_model.eval()
@@ -511,8 +512,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             actions = policy(obs)
             obs, _, dones, _ = env.step(actions)
             dones = dones.bool()
-            if policy_nn is not None and hasattr(policy_nn, "reset"):
-                policy_nn.reset(dones)
+            if hasattr(policy, "reset"):
+                policy.reset(dones)
 
             current_lidar = lidar_sampler.step(dones=dones)
             valid_history_lengths[dones] = 0

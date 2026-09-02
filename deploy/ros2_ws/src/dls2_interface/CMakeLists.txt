@@ -16,7 +16,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/BlindState.msg"
   "msg/BaseState.msg"
   "msg/Imu.msg"
-  "msg/TrajectoryGenerator.msg"
+  "msg/ControlSignal.msg"
 )
 
 ament_export_dependencies(rosidl_default_runtime)

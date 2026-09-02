@@ -39,7 +39,7 @@ import rclpy
 from rclpy.node import Node 
 from sensor_msgs.msg import Joy
 from visualization_msgs.msg import Marker, MarkerArray
-from dls2_interface.msg import BaseState, BlindState, Imu, TrajectoryGenerator
+from dls2_interface.msg import BaseState, BlindState, Imu, ControlSignal
 
 import time
 import numpy as np
@@ -99,13 +99,13 @@ class ControllerROS2(Node):
 
         # Subscribers and Publishers
         self.subscription_base_state = self.create_subscription(BaseState,"/base_state", self.get_base_state_callback, 1)
-        self.subscription_blind_state = self.create_subscription(BlindState,"blind_state", self.get_blind_state_callback, 1)
-        self.subscription_imu = self.create_subscription(Imu,"imu", self.get_imu_callback, 1)
+        self.subscription_blind_state = self.create_subscription(BlindState,"/blind_state_legged", self.get_blind_state_callback, 1)
+        self.subscription_imu = self.create_subscription(Imu,"/imu", self.get_imu_callback, 1)
         
-        self.subscription_joy = self.create_subscription(Joy,"joy", self.get_joy_callback, 1)
+        self.subscription_joy = self.create_subscription(Joy,"/joy", self.get_joy_callback, 1)
         self.last_joy_time = None
         
-        self.publisher_trajectory_generator = self.create_publisher(TrajectoryGenerator,"/trajectory_generator", 1)
+        self.publisher_control_signal = self.create_publisher(ControlSignal,"/control_signal_legged", 1)
         self.sequence_id = 0 # To keep track of the last msg sent, useful for debugging and synchronization
         RL_FREQ = 1./(config.training_env["sim"]["dt"]*config.training_env["decimation"])  # Hz, frequency of the RL controller
         self.timer = self.create_timer(1.0/RL_FREQ, self.compute_rl_control)
@@ -388,17 +388,18 @@ class ControllerROS2(Node):
             Kp = locomotion_policy.Kp_stand_up_and_down
             Kd = locomotion_policy.Kd_stand_up_and_down
 
-        # Publish the desired joint positions to the trajectory generator --------------------------------
-        trajectory_generator_msg = TrajectoryGenerator()
-        trajectory_generator_msg.timestamp = float(self.get_clock().now().nanoseconds)
-        trajectory_generator_msg.sequence_id = int(self.sequence_id % 1000)  # To avoid overflow, we reset the sequence id after it reaches a certain value
+        # Publish the desired joint positions to the control signal --------------------------------
+        control_signal_msg = ControlSignal()
+        control_signal_msg.timestamp = float(self.get_clock().now().nanoseconds)
+        control_signal_msg.sequence_id = int(self.sequence_id % 1000)  # To avoid overflow, we reset the sequence id after it reaches a certain value
         self.sequence_id += 1
-        trajectory_generator_msg.joints_position = np.array([desired_joint_pos.FL, desired_joint_pos.FR, desired_joint_pos.RL, desired_joint_pos.RR]).flatten().tolist()
-        trajectory_generator_msg.joints_velocity = np.zeros(12).tolist()
-        trajectory_generator_msg.kp = (np.ones(12) * Kp).tolist()
-        trajectory_generator_msg.kd = (np.ones(12) * Kd).tolist()
+        control_signal_msg.joints_position = np.array([desired_joint_pos.FL, desired_joint_pos.FR, desired_joint_pos.RL, desired_joint_pos.RR]).flatten().tolist()
+        control_signal_msg.joints_velocity = np.zeros(12).tolist()
+        control_signal_msg.joints_torques = np.zeros(12).tolist()
+        control_signal_msg.kp = (np.ones(12) * Kp).tolist()
+        control_signal_msg.kd = (np.ones(12) * Kd).tolist()
 
-        self.publisher_trajectory_generator.publish(trajectory_generator_msg)
+        self.publisher_control_signal.publish(control_signal_msg)
         
         
         # Render the simulation at a certain frequency -----------------------------------------------------------
