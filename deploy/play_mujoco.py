@@ -3,13 +3,15 @@
 # Python imports
 import os
 import sys
-import threading
 import time
+import numpy as np
+np.set_printoptions(precision=3, suppress=True)
+import threading
+import copy
 
 # Simulation related imports
 import mujoco
 import mujoco.viewer
-import numpy as np
 file_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(file_path + "/mujoco_utils/")
 sys.path.append(file_path + "/../")
@@ -23,7 +25,6 @@ from locomotion_policy_wrapper import LocomotionPolicyWrapper
 
 class PlayMujoco:
     def __init__(self):
-        np.set_printoptions(precision=3, suppress=True)
         self.simulation_dt = 0.002
 
         self.mjModel = mujoco.MjModel.from_xml_path(file_path + "/mujoco_utils/robot_model/" + config.robot + "/" + config.scene + ".xml")
