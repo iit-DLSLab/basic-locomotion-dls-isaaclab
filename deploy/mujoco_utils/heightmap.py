@@ -45,23 +45,6 @@ class HeightMap:
         self.sensor_data_matrix = np.empty((self.num_rows, self.num_cols, 1, 3))
         self.old_sensor_data_matrix = np.empty((self.num_rows, self.num_cols, 1, 3))
 
-    @property
-    def last_sim_time(self) -> float:
-        """Get the last simulation time, in seconds, from camera function call.
-
-        Returns:
-                int: The last simulation time.
-        """
-        return self.last_time
-
-    @last_sim_time.setter
-    def last_sim_time(self, time) -> None:
-        """Set the last simulation time, in seconds, from camera function call.
-
-        Returns:
-                None
-        """
-        self.last_time = time
 
     def raycast_sensor(self, pos, dist):
         """This function is used to simulate a raycast sensor in mujoco.
@@ -102,6 +85,7 @@ class HeightMap:
         else:
             intersection_point = ray_sensor_site + direction_vector * self.z
         return intersection_point
+
 
     def create_sensor_matrix(self, center, yaw=0.0):
         """This is the main function used to create the grid map using the ray sensor data."""
@@ -168,54 +152,9 @@ class HeightMap:
 
         return self.sensor_data_matrix
 
-    def circlecheck(self, a, b, x, y, r):
-        """Check if the point (a, b) is inside the circle defined by the center (x, y) and radius r.
-
-        This can be used to create circular patches.
-        """
-        c = (x - a) ** 2 + (y - b) ** 2 <= r**2
-        d = 1 if c else 0
-        return d
-
-    def rectanglecheck(self, a, b, x, y, r):
-        """Check if the point (a, b) is inside the rectangle defined by the center (x, y) and radius r.
-
-        This can be used to create rectangular patches.
-
-        Parameters:
-            a (float): x-coordinate of the point.
-            b (float): y-coordinate of the point.
-            x (float): x-coordinate of the center of the rectangle.
-            y (float): y-coordinate of the center of the rectangle.
-            r (float): Radius from the center to the edges of the rectangle.
-
-        Returns:
-            int: 1 if the point is inside the rectangle, 0 otherwise.
-        """
-        rect_x1 = x - r
-        rect_x2 = x + r
-        rect_y1 = y - r
-        rect_y2 = y + r
-        if rect_x1 <= a <= rect_x2 and rect_y1 <= b <= rect_y2:
-            return 1
-        else:
-            return 0
 
     def update_height_map(self, center, yaw):
         """This function move the heightmap with the robot and update each cell values."""
         self.data = self.create_sensor_matrix(center, yaw)
         return self.data
 
-    def get_height(self, target):
-        """This function is used to get the height of the terrain at a specific target position."""
-        if self.data is not None:
-            nearest_datapoint = np.array([0, 0, 0])
-            for i in range(self.num_rows):
-                for j in range(self.num_cols):
-                    if np.linalg.norm(self.data[i][j][0][0:2] - target[0:2]) < np.linalg.norm(
-                        nearest_datapoint[0:2] - target[0:2]
-                    ):
-                        nearest_datapoint = self.data[i][j][0] + 0.02
-            return nearest_datapoint[2]
-
-        return None
