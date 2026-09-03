@@ -33,4 +33,3 @@ dependencies:
   - readchar
   - onnxruntime
   - torch
-  - gym-quadruped

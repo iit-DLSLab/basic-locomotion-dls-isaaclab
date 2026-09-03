@@ -2,8 +2,6 @@ import readline
 import readchar
 import time
 
-from gym_quadruped.utils.quadruped_utils import LegsAttr
-
 import numpy as np
 import copy
 import mujoco
@@ -33,6 +31,46 @@ class Console():
         else:
             return None
 
+    def goUp(self):
+        if not self.isDown:
+            print("The robot is already up")
+            return
+
+        start_time = time.time()
+        time_motion = 5.0
+        initial_joint_positions = copy.deepcopy(self.controller_node.legs_joints_position)
+        keyframe_id = mujoco.mj_name2id(self.controller_node.mjModel, mujoco.mjtObj.mjOBJ_KEY, "home")
+        reference_joint_positions = self.controller_node.mjModel.key_qpos[keyframe_id][7:19]
+
+        while time.time() - start_time < time_motion:
+            alpha = (time.time() - start_time) / time_motion
+            self.controller_node.desired_joint_pos_leg = (
+                (1 - alpha) * initial_joint_positions + alpha * reference_joint_positions
+            )
+            time.sleep(0.01)
+
+        self.isDown = False
+
+    def goDown(self):
+        if self.isDown:
+            print("The robot is already down")
+            return
+
+        self.isDown = True
+        self.isRLActivated = False
+        start_time = time.time()
+        time_motion = 5.0
+        initial_joint_positions = copy.deepcopy(self.controller_node.legs_joints_position)
+        keyframe_id = mujoco.mj_name2id(self.controller_node.mjModel, mujoco.mjtObj.mjOBJ_KEY, "down")
+        reference_joint_positions = self.controller_node.mjModel.key_qpos[keyframe_id][7:19]
+
+        while time.time() - start_time < time_motion:
+            alpha = (time.time() - start_time) / time_motion
+            self.controller_node.desired_joint_pos_leg = (
+                (1 - alpha) * initial_joint_positions + alpha * reference_joint_positions
+            )
+            time.sleep(0.01)
+
 
     def interactive_command_line(self, ):
         self.print_all_commands()
@@ -41,94 +79,12 @@ class Console():
             try:
                 if(input_string == "goUp"):
                     print("Going Up")
-                    if(not self.isDown):
-                        print("The robot is already up")
-                        continue
-
-                                        
-                    start_time = time.time()
-                    time_motion = 5.
-
-                    temp = copy.deepcopy(self.controller_node.joint_positions)
-                    initial_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller_node.env.mjModel.nu/4))) for _ in range(4)])
-                    initial_joint_positions.FL = temp[0:3]
-                    initial_joint_positions.FR = temp[3:6]
-                    initial_joint_positions.RL = temp[6:9]
-                    initial_joint_positions.RR = temp[9:12]
-
-                    reference_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller_node.env.mjModel.nu/4))) for _ in range(4)])
-                    keyframe_id = mujoco.mj_name2id(self.controller_node.env.mjModel, mujoco.mjtObj.mjOBJ_KEY, "home")
-                    standUp_qpos = self.controller_node.env.mjModel.key_qpos[keyframe_id]
-                    
-                    reference_joint_positions.FL = standUp_qpos[7:10]
-                    reference_joint_positions.FR = standUp_qpos[10:13]
-                    reference_joint_positions.RL = standUp_qpos[13:16]
-                    reference_joint_positions.RR = standUp_qpos[16:19]
-
-                    while(time.time() - start_time < time_motion):
-                        time_diff = time.time() - start_time
-                        alpha = time_diff / time_motion
-                        interpolated_positions = [
-                            (1 - alpha) * initial + alpha * reference
-                            for initial, reference in zip(initial_joint_positions, reference_joint_positions)
-                        ]
-
-                        self.controller_node.stand_up_and_down_actions.FL = interpolated_positions[0]
-                        self.controller_node.stand_up_and_down_actions.FR = interpolated_positions[1]
-                        self.controller_node.stand_up_and_down_actions.RL = interpolated_positions[2]
-                        self.controller_node.stand_up_and_down_actions.RR = interpolated_positions[3]
-
-                        time.sleep(0.01)
-
-                    self.isDown = False
+                    self.goUp()
 
 
                 elif(input_string == "goDown"):
                     print("Going Down")
-                    if(self.isDown):
-                        print("The robot is already down")
-                        continue
-
-                    self.isDown = True
-                    self.isRLActivated = False
-
-                    start_time = time.time()
-                    time_motion = 5.
-
-                    #if(self.isRLActivated):
-                    #    initial_joint_positions = copy.deepcopy(self.controller_node.locomotion_policy.desired_joint_pos)
-                    #else:
-                    temp = copy.deepcopy(self.controller_node.joint_positions)
-                    initial_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller_node.env.mjModel.nu/4))) for _ in range(4)])
-                    initial_joint_positions.FL = temp[0:3]
-                    initial_joint_positions.FR = temp[3:6]
-                    initial_joint_positions.RL = temp[6:9]
-                    initial_joint_positions.RR = temp[9:12]
-                    
-                    keyframe_id = mujoco.mj_name2id(self.controller_node.env.mjModel, mujoco.mjtObj.mjOBJ_KEY, "down")
-                    goDown_qpos = self.controller_node.env.mjModel.key_qpos[keyframe_id]
-                    reference_joint_positions = LegsAttr(*[np.zeros((1, int(self.controller_node.env.mjModel.nu/4))) for _ in range(4)])
-                    reference_joint_positions.FL = goDown_qpos[7:10]
-                    reference_joint_positions.FR = goDown_qpos[10:13]
-                    reference_joint_positions.RL = goDown_qpos[13:16]
-                    reference_joint_positions.RR = goDown_qpos[16:19]
-
-                    while(time.time() - start_time < time_motion):
-                        time_diff = time.time() - start_time
-                        alpha = time_diff / time_motion
-                        interpolated_positions = [
-                            (1 - alpha) * initial + alpha * reference
-                            for initial, reference in zip(initial_joint_positions, reference_joint_positions)
-                        ]
-            
-                        self.controller_node.stand_up_and_down_actions.FL = interpolated_positions[0]
-                        self.controller_node.stand_up_and_down_actions.FR = interpolated_positions[1]
-                        self.controller_node.stand_up_and_down_actions.RL = interpolated_positions[2]
-                        self.controller_node.stand_up_and_down_actions.RR = interpolated_positions[3]
-
-                        time.sleep(0.01)
-
-                    self.isRLActivated = False
+                    self.goDown()
 
                     
                 elif(input_string == "activate"):
@@ -171,48 +127,36 @@ class Console():
                     print("q: Rotate Left")
                     print("e: Rotate Right")
                     print("0: Stop")
-                    print("1: Pitch Up")
-                    print("2: Reset Pitch")
-                    print("3: Pitch Down")
                     print("Press any other key to exit")
                     while True:
                         command = readchar.readkey()
                         if(command == "w"):
-                            self.controller_node.env._ref_base_lin_vel_H[0] += 0.1
+                            self.controller_node.ref_base_lin_vel_H[0] += 0.1
                             print("w")
                         elif(command == "s"):
-                            self.controller_node.env._ref_base_lin_vel_H[0] -= 0.1
+                            self.controller_node.ref_base_lin_vel_H[0] -= 0.1
                             print("s")
                         elif(command == "a"):
-                            self.controller_node.env._ref_base_lin_vel_H[1] += 0.1
+                            self.controller_node.ref_base_lin_vel_H[1] += 0.1
                             print("a")
                         elif(command == "d"):
-                            self.controller_node.env._ref_base_lin_vel_H[1] -= 0.1
+                            self.controller_node.ref_base_lin_vel_H[1] -= 0.1
                             print("d")
                         elif(command == "q"):
-                            self.controller_node.env._ref_base_ang_yaw_dot += 0.1
+                            self.controller_node.ref_base_ang_yaw_dot += 0.1
                             print("q")
                         elif(command == "e"):
-                            self.controller_node.env._ref_base_ang_yaw_dot -= 0.1
+                            self.controller_node.ref_base_ang_yaw_dot -= 0.1
                             print("e")
                         elif(command == "0"):
-                            self.controller_node.env._ref_base_lin_vel_H[0] = 0
-                            self.controller_node.env._ref_base_lin_vel_H[1] = 0
-                            self.controller_node.env._ref_base_ang_yaw_dot = 0 
+                            self.controller_node.ref_base_lin_vel_H[0] = 0
+                            self.controller_node.ref_base_lin_vel_H[1] = 0
+                            self.controller_node.ref_base_ang_yaw_dot = 0
                             print("0")
-                        elif(command == "1"):
-                            self.pitch_delta -= 0.1
-                            print("1")
-                        elif(command == "2"):
-                            self.pitch_delta = 0
-                            print("2")
-                        elif(command == "3"):
-                            self.pitch_delta += 0.1
-                            print("3")
                         else:
-                            self.controller_node.env._ref_base_lin_vel_H[0] = 0
-                            self.controller_node.env._ref_base_lin_vel_H[1] = 0
-                            self.controller_node.env._ref_base_ang_yaw_dot = 0 
+                            self.controller_node.ref_base_lin_vel_H[0] = 0
+                            self.controller_node.ref_base_lin_vel_H[1] = 0
+                            self.controller_node.ref_base_ang_yaw_dot = 0
                             break
             
             
