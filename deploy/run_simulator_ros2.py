@@ -35,15 +35,19 @@ if os.environ.get("BASIC_LOCOMOTION_ROS2_SOURCED") != "1":
     os.execv("/bin/bash", ["bash", "-c", cmd])
 
 
-import rclpy
-from rclpy.node import Node
+# ROS 2 imports
+import rclpy 
+from rclpy.node import Node 
+from sensor_msgs.msg import Joy
 from visualization_msgs.msg import Marker, MarkerArray
 from dls2_interface.msg import BaseState, BlindState, Imu, ControlSignal
-from unitree_go.msg import LowState
 
+# Python imports
 import time
 import numpy as np
 np.set_printoptions(precision=3, suppress=True)
+import threading
+import copy
 
 # Simulation related imports
 import mujoco
@@ -55,8 +59,8 @@ sys.path.append(file_path + "/../")
 import mujoco_utils
 from heightmap import HeightMap
 
-from deploy import config
-
+# Locomotion Policy imports
+import config
 
 # Set the priority of the process
 pid = os.getpid()
@@ -65,34 +69,29 @@ os.system("renice -n -21 -p " + str(pid))
 os.system("echo -20 > /proc/" + str(pid) + "/autogroup")
 #for real time, launch it with chrt -r 99 python3 run_controller.py
 
-
-USE_SCHEDULER = True # Use the scheduler to compute the control signal
+# Global variables for the simulation
 SCHEDULER_FREQ = 500 # Frequency of the scheduler
 RENDER_FREQ = 30
 HEIGHTMAP_FREQ = 15
+
 
 # Shell for the controllers ----------------------------------------------
 class SimulatorROS2(Node):
     def __init__(self):
         super().__init__('SimulatorROS2')
 
-        # Subscribers and Publishers
+        # Publishers
         self.publisher_base_state = self.create_publisher(BaseState,"/base_state", 1)
         self.publisher_blind_state = self.create_publisher(BlindState,"/blind_state_legged", 1)
         self.publisher_imu = self.create_publisher(Imu,"/imu", 1)
-
         self.publisher_low_state = self.create_publisher(LowState,"/lowstate", 1)
         self.publisher_heightmap = self.create_publisher(MarkerArray,"/height_scan_markers", 1)
 
+        # Subscriber
         self.subscriber_control_signal = self.create_subscription(ControlSignal,"/control_signal_legged", self.get_control_signal_callback, 1)
 
+        # Timer for the simulation step
         self.timer = self.create_timer(1.0/SCHEDULER_FREQ, self.compute_simulator_step_callback)
-
-        # Timing stuff
-        self.loop_time = 0.002
-        self.last_start_time = None
-        self.last_mpc_loop_time = 0.0
-
 
         # Mujoco model and data
         self.mjModel = mujoco.MjModel.from_xml_path(file_path + "/mujoco_utils/robot_model/" + config.robot + "/" + config.scene + ".xml")

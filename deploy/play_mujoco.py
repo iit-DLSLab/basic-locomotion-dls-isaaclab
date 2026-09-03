@@ -1,5 +1,6 @@
 # Description: This script is used to simulate the full model of the robot in mujoco
 
+# Python imports
 import os
 import sys
 import threading
@@ -15,6 +16,7 @@ sys.path.append(file_path + "/../")
 import mujoco_utils
 from heightmap import HeightMap
 
+# Locomotion Policy imports
 from deploy import config
 from locomotion_policy_wrapper import LocomotionPolicyWrapper
 

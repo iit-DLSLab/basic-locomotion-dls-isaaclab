@@ -35,18 +35,18 @@ if os.environ.get("BASIC_LOCOMOTION_ROS2_SOURCED") != "1":
     os.execv("/bin/bash", ["bash", "-c", cmd])
 
 
+# ROS 2 imports
 import rclpy 
 from rclpy.node import Node 
 from sensor_msgs.msg import Joy
 from visualization_msgs.msg import Marker, MarkerArray
 from dls2_interface.msg import BaseState, BlindState, Imu, ControlSignal
 
+# Python imports
 import time
 import numpy as np
 np.set_printoptions(precision=3, suppress=True)
-
 import threading
-
 import copy
 
 # Simulation related imports
@@ -62,8 +62,8 @@ from heightmap import HeightMap
 
 # Locomotion Policy imports
 from locomotion_policy_wrapper import LocomotionPolicyWrapper
-
 import config
+
 
 # Set the priority of the process
 pid = os.getpid()
@@ -73,6 +73,7 @@ os.system("echo -20 > /proc/" + str(pid) + "/autogroup")
 #for real time, launch it with chrt -r 99 python3 run_controller.py
 
 
+# Global variables
 USE_MUJOCO_RENDER = False
 
 
